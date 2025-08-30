@@ -1,0 +1,56 @@
+{
+  "name": "farrow-docs",
+  "version": "1.0.0",
+  "description": "Comprehensive documentation site for Farrow - A progressive TypeScript web framework",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "serve": "vitepress serve",
+    "commit": "cz"
+  },
+  "keywords": [
+    "farrow",
+    "documentation",
+    "vitepress",
+    "typescript",
+    "web-framework",
+    "functional-programming",
+    "type-safe",
+    "progressive"
+  ],
+  "author": "Aison <aisonsu@outlook.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AisonSu/farrow-doc.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AisonSu/farrow-doc/issues"
+  },
+  "homepage": "https://github.com/AisonSu/farrow-doc",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
+    "commitizen": "^4.3.1",
+    "cz-conventional-changelog": "^3.3.0",
+    "vitepress": "2.0.0-alpha.12"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "pnpm": {
+    "peerDependencyRules": {
+      "ignoreMissing": [
+        "@algolia/client-search",
+        "search-insights"
+      ]
+    }
+  }
+}
