@@ -131,7 +131,7 @@ http.listen(3000, () => {
 
 ### 2. Run Application
 
-Start the server with:
+Start the development server with:
 
 ```bash
 npm run dev
@@ -315,9 +315,9 @@ Let's add unified error handling for the API:
 
 ```typescript
 // Error handling middleware
-app.use((request, next) => {
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
     console.error('Error:', error)
     

@@ -1,214 +1,242 @@
 # Farrow Advanced Tutorial
 
-> Explore the advanced features and deep usage of the Farrow framework
+> Master advanced features and APIs of the Farrow framework
 
 ## Overview
 
-After mastering the basics of Farrow, this tutorial will take you deep into the framework's advanced features. We will learn:
+This tutorial will dive deep into the advanced features and APIs of the Farrow framework, helping you fully leverage the framework's capabilities.
 
-- farrow-pipeline: Pipeline composition, Context isolation, lazy loading
-- farrow-schema: Manual validation, custom validators, Schema transformation
-- farrow-http: Response interception, custom responses, response merging
+**Learning Objectives:**
+- Master advanced APIs of farrow-pipeline
+- Understand extended features of farrow-schema
+- Familiarize with complete features of farrow-http
+- Understand the design philosophy of each module
+
+## Table of Contents
+
+### farrow-pipeline Advanced Features
+- [Container: Understanding Context Isolation](#container-understanding-context-isolation)
+- [usePipeline: Maintaining Container Inheritance](#usepipeline-maintaining-container-inheritance)
+- [AsyncPipeline.useLazy: Lazy Loading](#asyncpipelineuselazy-lazy-loading)
+
+### farrow-schema Advanced Features
+- [Validator.validate: Manual Validation](#validatorvalidate-manual-validation)
+- [ValidatorType: Custom Validators](#validatortype-custom-validators)
+
+### farrow-http Advanced Features
+- [Response.capture: Global Response Interception](#responsecapture-global-response-interception)
+- [Response.custom: Low-level Response Control](#responsecustom-low-level-response-control)
+- [Http Constructor Options: Advanced Configuration](#http-constructor-options-advanced-configuration)
+- [Router Advanced Features](#router-advanced-features)
+- [Error Boundaries and Recovery](#error-boundaries-and-recovery)
+- [Advanced Middleware Patterns](#advanced-middleware-patterns)
 
 ---
 
 ## farrow-pipeline Advanced Features
 
-### usePipeline - Pipeline Composition and Reuse
+### Container: Understanding Context Isolation
 
-`usePipeline` allows you to call another Pipeline within a Pipeline's middleware, enabling modularization and reuse.
+Before diving into `usePipeline`, we need to understand Farrow's Container concept.
 
-#### Basic Usage
+#### What is Container?
+
+Container is Farrow's internal mechanism for managing Context storage and isolation. Each time `pipeline.run()` is called, a new Container is created, containing all Context state for that execution.
 
 ```typescript
-import { createPipeline, usePipeline } from 'farrow-pipeline'
+import { createPipeline, createContext } from 'farrow-pipeline'
 
-// Create independent Pipelines
-const validationPipeline = createPipeline<UserInput, ValidatedUser>()
-validationPipeline.use((input, next) => {
-  if (!input.email?.includes('@')) {
-    throw new Error('Invalid email')
-  }
-  return next({ ...input, validated: true })
+const UserContext = createContext<{ name: string } | null>(null)
+
+const pipeline = createPipeline<void, string>()
+
+pipeline.use((input, next) => {
+  UserContext.set({ name: 'John' })
+  console.log('Set user:', UserContext.get()) // { name: 'John' }
+  return next('Processing complete')
 })
 
-const transformPipeline = createPipeline<ValidatedUser, ProcessedUser>()
-transformPipeline.use((input, next) => {
-  return next({
-    ...input,
-    email: input.email.toLowerCase(),
-    createdAt: new Date()
-  })
+// Each run creates a new Container
+pipeline.run() // Container A: UserContext = { name: 'John' }
+pipeline.run() // Container B: UserContext = { name: 'John' } (independent container)
+```
+
+#### Container Isolation Features
+
+Different Pipeline executions are completely isolated:
+
+```typescript
+const pipeline1 = createPipeline<void, void>()
+const pipeline2 = createPipeline<void, void>()
+
+pipeline1.use((input, next) => {
+  UserContext.set({ name: 'Alice' })
+  console.log('Pipeline1 user:', UserContext.get()) // { name: 'Alice' }
+  return next()
 })
 
-// Main Pipeline composing other Pipelines
-const mainPipeline = createPipeline<UserInput, Result>()
+pipeline2.use((input, next) => {
+  console.log('Pipeline2 user:', UserContext.get()) // null (different Container)
+  return next()
+})
+
+pipeline1.run() // Executes in Container A
+pipeline2.run() // Executes in Container B, cannot access Container A's state
+```
+
+### usePipeline: Maintaining Container Inheritance
+
+Now that we understand Container isolation issues, the purpose of `usePipeline` is clear: it allows sub-Pipelines to inherit the current Container instead of creating a new one.
+
+#### Problem Demo: Why usePipeline is Needed?
+
+```typescript
+const UserContext = createContext<{ id: string } | null>(null)
+
+const authPipeline = createPipeline<{ token: string }, { userId: string }>()
+authPipeline.use((input, next) => {
+  const userId = validateToken(input.token)
+  UserContext.set({ id: userId }) // Set user context
+  return next({ userId })
+})
+
+const dataPipeline = createPipeline<{ userId: string }, { data: any }>()
+dataPipeline.use((input, next) => {
+  const user = UserContext.get() // Try to get user context
+  console.log('Current user:', user) // What will this output?
+  return next({ data: 'some data' })
+})
+
+const mainPipeline = createPipeline<{ token: string }, { data: any }>()
+
+// ❌ Wrong way: directly calling run()
 mainPipeline.use((input, next) => {
-  // Use usePipeline to get callable functions
-  const validate = usePipeline(validationPipeline)
-  const transform = usePipeline(transformPipeline)
+  const authResult = authPipeline.run(input)    // Creates new Container A
+  const dataResult = dataPipeline.run(authResult) // Creates new Container B
+  
+  // UserContext.get() in dataPipeline returns null!
+  // Because Container B doesn't have UserContext state
+  
+  return next(dataResult)
+})
+```
+
+#### usePipeline Solution
+
+```typescript
+// ✅ Correct way: using usePipeline
+mainPipeline.use((input, next) => {
+  const runAuth = usePipeline(authPipeline)  // Inherits current Container
+  const runData = usePipeline(dataPipeline)  // Inherits current Container
+  
+  const authResult = runAuth(input)    // Executes in current Container
+  const dataResult = runData(authResult) // Executes in same Container
+  
+  // UserContext.get() in dataPipeline can correctly get user info!
+  
+  return next(dataResult)
+})
+
+// Complete example
+const completeExample = createPipeline<{ token: string }, string>()
+completeExample.use((input, next) => {
+  console.log('Main process started')
+  
+  const runAuth = usePipeline(authPipeline)
+  const runData = usePipeline(dataPipeline)
   
   try {
-    const validated = validate(input)
-    const processed = transform(validated)
-    return next({ success: true, data: processed })
+    const authResult = runAuth(input)
+    console.log('Authentication complete, user ID:', authResult.userId)
+    
+    const dataResult = runData(authResult)
+    console.log('Data retrieval complete')
+    
+    return next('Processing successful')
   } catch (error) {
-    return { success: false, error: error.message }
+    return next('Processing failed: ' + error.message)
   }
 })
 ```
 
-#### Conditional Pipeline Execution
+### Container: Manual Creation and Management
+
+Besides automatically created Containers, you can manually create and manage Containers.
+
+#### Creating and Using Container
 
 ```typescript
-const processingPipeline = createPipeline<Request, Response>()
+import { createContainer, createContext } from 'farrow-pipeline'
 
-processingPipeline.use((request, next) => {
-  // Choose different processing flows based on conditions
-  const pipeline = request.type === 'batch' 
-    ? usePipeline(batchPipeline)
-    : usePipeline(singlePipeline)
-  
-  const result = pipeline(request.data)
-  return next(result)
+const DatabaseContext = createContext<Database>(defaultDB)
+const ConfigContext = createContext<Config>(defaultConfig)
+
+// Create dedicated container
+const testContainer = createContainer({
+  db: DatabaseContext.create(mockDatabase),
+  config: ConfigContext.create(testConfig)
 })
+
+// Run in specific container
+const result = pipeline.run(input, { container: testContainer })
 ```
 
-### Container and runWithContainer - Context Isolation
-
-Container provides request-level context isolation, ensuring data between concurrent requests doesn't interfere with each other.
-
-#### Creating Isolated Execution Environment
+#### Multi-environment Configuration Example
 
 ```typescript
-import { createContainer, runWithContainer, createContext } from 'farrow-pipeline'
-
-// Define Contexts
-const UserContext = createContext<User | null>(null)
-const DatabaseContext = createContext<Database | null>(null)
-const LoggerContext = createContext<Logger>(defaultLogger)
-
-// Create independent execution environment for each request
-function handleRequest(requestData: RequestData) {
-  // Create request-specific Container
-  const container = createContainer({
-    [UserContext]: requestData.user,
-    [DatabaseContext]: createDatabaseConnection(requestData.tenantId),
-    [LoggerContext]: createLogger(requestData.requestId)
+const environments = {
+  development: createContainer({
+    db: DatabaseContext.create(devDB),
+    config: ConfigContext.create(devConfig)
+  }),
+  production: createContainer({
+    db: DatabaseContext.create(prodDB),
+    config: ConfigContext.create(prodConfig)
+  }),
+  test: createContainer({
+    db: DatabaseContext.create(mockDB),
+    config: ConfigContext.create(testConfig)
   })
-  
-  // Execute business logic in Container environment
-  return runWithContainer(() => {
-    // All Context access here is isolated
-    const user = UserContext.get()
-    const db = DatabaseContext.get()
-    const logger = LoggerContext.get()
-    
-    logger.info(`Processing request for user: ${user?.id}`)
-    return processBusinessLogic(db, user)
-  }, container)
 }
+
+const currentContainer = environments[process.env.NODE_ENV] || environments.development
+const result = pipeline.run(input, { container: currentContainer })
 ```
 
-#### Nested Containers
+### AsyncPipeline.useLazy: Lazy Loading
 
-```typescript
-const parentPipeline = createPipeline<Input, Output>()
-
-parentPipeline.use((input, next) => {
-  // Parent setup
-  ConfigContext.set({ env: 'production' })
-  
-  // Create child Container, inheriting and extending parent environment
-  const childContainer = createContainer({
-    [ConfigContext]: { ...ConfigContext.get(), feature: 'enabled' }
-  })
-  
-  // Run in child Container, modifications don't affect parent
-  const result = runWithContainer(() => {
-    return processInIsolation(input)
-  }, childContainer)
-  
-  return next(result)
-})
-```
-
-### AsyncPipeline.useLazy - Lazy Loading
-
-`useLazy` allows lazy loading of middleware, optimizing startup time and memory usage.
-
-#### Synchronous Lazy Loading
+`useLazy` allows lazy loading of middleware, suitable for conditional or heavy dependencies.
 
 ```typescript
 import { createAsyncPipeline } from 'farrow-pipeline'
 
 const pipeline = createAsyncPipeline<Request, Response>()
 
-// Lazy load heavyweight middleware
-pipeline.useLazy(() => {
-  // This function only executes on first use
-  console.log('Loading heavy middleware...')
-  const heavyDependency = loadHeavyDependency()
+// Lazy load middleware
+pipeline.useLazy(async () => {
+  // Only loads when actually needed
+  const heavyLibrary = await import('heavy-library')
   
-  return (input, next) => {
-    const processed = heavyDependency.process(input)
-    return next(processed)
+  return async (input, next) => {
+    if (shouldUseHeavyLibrary(input)) {
+      const result = await heavyLibrary.process(input)
+      return { ...input, processed: result }
+    }
+    return next(input)
   }
 })
 
 // Conditional loading
-pipeline.useLazy(() => {
-  if (process.env.FEATURE_FLAG === 'enabled') {
-    return featureMiddleware
+pipeline.useLazy(async () => {
+  const feature = await getFeatureFlag('advanced-processing')
+  
+  if (feature.enabled) {
+    const processor = await import('./advanced-processor')
+    return processor.middleware
   }
+  
   // Return pass-through middleware
   return (input, next) => next(input)
-})
-```
-
-#### Asynchronous Module Loading
-
-```typescript
-const apiPipeline = createAsyncPipeline<ApiRequest, ApiResponse>()
-
-// Asynchronously load external modules
-apiPipeline.useLazy(async () => {
-  // Dynamic import, load only when needed
-  const { processPayment } = await import('./payment-processor')
-  
-  return async (request, next) => {
-    if (request.type === 'payment') {
-      const result = await processPayment(request.data)
-      return { type: 'payment', result }
-    }
-    return next(request)
-  }
-})
-
-// Parallel loading of multiple middleware
-apiPipeline.useLazy(async () => {
-  const [auth, rateLimit, cache] = await Promise.all([
-    import('./middleware/auth'),
-    import('./middleware/rate-limit'),
-    import('./middleware/cache')
-  ])
-  
-  return (request, next) => {
-    if (!auth.validate(request)) {
-      return { error: 'Unauthorized' }
-    }
-    
-    if (!rateLimit.check(request)) {
-      return { error: 'Rate limit exceeded' }
-    }
-    
-    const cached = cache.get(request)
-    if (cached) return cached
-    
-    const response = next(request)
-    cache.set(request, response)
-    return response
-  }
 })
 ```
 
@@ -216,263 +244,192 @@ apiPipeline.useLazy(async () => {
 
 ## farrow-schema Advanced Features
 
-### Validator.validate - Manual Validation
+### Validator.validate: Manual Validation
 
-`Validator.validate` allows you to manually validate data anywhere, not just limited to HTTP routes.
-
-#### Basic Usage
+Besides automatic validation, you can manually use Validator for data validation.
 
 ```typescript
 import { Validator } from 'farrow-schema/validator'
-import { ObjectType, String, Number, Optional } from 'farrow-schema'
+import { ObjectType, String, Number } from 'farrow-schema'
 
-// Define Schema
-class UserInput extends ObjectType {
+class User extends ObjectType {
   name = String
   age = Number
-  email = String
-  bio = Optional(String)
 }
 
-// Manually validate data
-const data = { name: 'John', age: 25, email: 'john@example.com' }
-const result = Validator.validate(UserInput, data)
+// Manual validation
+const result = Validator.validate(User, {
+  name: "John",
+  age: 25
+})
 
 if (result.isOk) {
-  // Validation successful, result.value is type-safe data
-  console.log('Valid data:', result.value)
-  // result.value type: { name: string; age: number; email: string; bio?: string }
+  console.log('Validation successful:', result.value)
 } else {
-  // Validation failed, result.value contains error information
-  console.error('Validation error:', result.value.message)
-  console.error('Error path:', result.value.path)
+  console.log('Validation failed:', result.value.message)
 }
 ```
 
-#### Using in Business Logic
+#### Batch Validation
 
 ```typescript
-// Process form data
-function processForm(input: unknown) {
-  const result = Validator.validate(UserInput, input)
+function validateBatch<T>(schema: any, dataList: unknown[]): {
+  valid: T[]
+  invalid: Array<{ index: number, error: string, data: unknown }>
+} {
+  const results = dataList.map((data, index) => ({
+    index,
+    data,
+    result: Validator.validate(schema, data)
+  }))
   
-  if (result.isErr) {
-    throw new Error(`Validation failed at ${result.value.path?.join('.')}: ${result.value.message}`)
-  }
-  
-  // Now result.value is type-safe
-  return saveToDatabase(result.value)
-}
-
-// Batch validation
-function validateBatch(items: unknown[]): { valid: any[], invalid: any[] } {
-  const results = items.map(item => Validator.validate(UserInput, item))
-  
-  const valid = results
-    .filter(r => r.isOk)
-    .map(r => r.value)
-  
-  const invalid = results
-    .filter(r => r.isErr)
-    .map((r, index) => ({
-      index,
-      error: r.value.message,
-      path: r.value.path
+  return {
+    valid: results.filter(r => r.result.isOk).map(r => r.result.value),
+    invalid: results.filter(r => r.result.isErr).map(r => ({
+      index: r.index,
+      error: r.result.value.message,
+      data: r.data
     }))
-  
-  return { valid, invalid }
+  }
 }
-
-// Validate nested data
-class OrderSchema extends ObjectType {
-  orderId = String
-  user = UserInput  // Nested Schema
-  items = List({
-    productId: String,
-    quantity: Number,
-    price: Number
-  })
-}
-
-const orderData = {
-  orderId: 'ORD-001',
-  user: { name: 'John', age: 25, email: 'john@example.com' },
-  items: [
-    { productId: 'P1', quantity: 2, price: 99.99 }
-  ]
-}
-
-const orderResult = Validator.validate(OrderSchema, orderData)
 ```
 
-### Custom ValidatorType
+### ValidatorType: Custom Validators
 
-By extending `ValidatorType`, you can create custom validation logic.
-
-#### Creating Custom Validators
+Create custom validation logic validators.
 
 ```typescript
-import { ValidatorType } from 'farrow-schema/validator'
-import { Validator } from 'farrow-schema'
+import { ValidatorType, Validator } from 'farrow-schema/validator'
 
-// Email validator
 class EmailType extends ValidatorType<string> {
   validate(input: unknown) {
-    // First validate basic type
     const stringResult = Validator.validate(String, input)
     if (stringResult.isErr) {
-      return this.Err('Email must be a string')
+      return this.Err('Must be a string')
     }
     
-    const email = stringResult.value.trim().toLowerCase()
-    
-    // Validate email format
+    const email = stringResult.value
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    
     if (!emailRegex.test(email)) {
       return this.Err('Invalid email format')
     }
     
-    // Return processed value
     return this.Ok(email)
   }
 }
 
-// Parameterized validator
-class RangeType extends ValidatorType<number> {
-  constructor(
-    private min: number,
-    private max: number
-  ) {
+// Use custom validator
+class UserSchema extends ObjectType {
+  email = new EmailType()
+  name = String
+}
+```
+
+#### Parameterized Validators
+
+```typescript
+class StringLengthType extends ValidatorType<string> {
+  constructor(private min: number, private max: number) {
     super()
   }
   
   validate(input: unknown) {
-    // First validate if it's a number
-    const numberResult = Validator.validate(Number, input)
-    if (numberResult.isErr) {
-      return numberResult  // Return error directly
+    const result = Validator.validate(String, input)
+    if (result.isErr) return result
+    
+    const str = result.value
+    if (str.length < this.min || str.length > this.max) {
+      return this.Err(`Length must be between ${this.min}-${this.max}`)
     }
     
-    const value = numberResult.value
-    if (value < this.min || value > this.max) {
-      return this.Err(`Value must be between ${this.min} and ${this.max}`)
-    }
-    
-    return this.Ok(value)
+    return this.Ok(str)
   }
 }
 
-// Use custom validators
-class UserProfile extends ObjectType {
-  email = EmailType  // Use custom email validator
-  age = new RangeType(0, 150)
-  score = new RangeType(0, 100)
+// Factory function
+const StringLength = (min: number, max: number) => new StringLengthType(min, max)
+
+class Article extends ObjectType {
+  title = StringLength(5, 100)
+  content = StringLength(50, 5000)
 }
 ```
 
-#### Validator Factory Pattern
-
-```typescript
-// Create reusable validator factories
-function StringPattern(pattern: RegExp, message: string) {
-  return class extends ValidatorType<string> {
-    validate(input: unknown) {
-      const stringResult = Validator.validate(String, input)
-      if (stringResult.isErr) {
-        return this.Err('Must be a string')
-      }
-      
-      if (!pattern.test(stringResult.value)) {
-        return this.Err(message)
-      }
-      
-      return this.Ok(stringResult.value)
-    }
-  }
-}
-
-// Use factory to create concrete validators
-const UsernameType = StringPattern(
-  /^[a-zA-Z0-9_]{3,20}$/,
-  'Username must be 3-20 characters, alphanumeric and underscore only'
-)
-
-const PhoneType = StringPattern(
-  /^\+?[1-9]\d{10,14}$/,
-  'Invalid phone number format'
-)
-
-const SlugType = StringPattern(
-  /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  'Slug must be lowercase alphanumeric with hyphens'
-)
-
-// Compose usage
-class ContactForm extends ObjectType {
-  username = UsernameType
-  phone = PhoneType
-  slug = SlugType
-}
-```
+---
 
 ## farrow-http Advanced Features
 
-### Response.capture - Response Interception
+### Response.capture: Global Response Interception
 
-`capture` allows you to intercept specific types of responses and handle them uniformly.
+`capture` allows you to intercept and transform specific response types, implementing global response format unification.
 
-#### Unified Response Format
+#### Basic Response Interception
 
 ```typescript
-// Intercept all JSON responses
-app.capture('json', (jsonBody, response) => {
-  const statusCode = response.info.status?.code || 200
-  
-  // Unified success response format
-  if (statusCode < 400) {
-    return Response.json({
-      success: true,
-      data: jsonBody.value,
-      meta: {
-        timestamp: Date.now(),
-        version: 'v1'
-      }
-    }).merge(response)  // Preserve other properties of original response
-  }
-  
-  // Unified error response format
+import { Http, Response } from 'farrow-http'
+
+const app = Http()
+
+// Intercept all JSON responses for unified format
+app.capture('json', (jsonBody) => {
   return Response.json({
-    success: false,
-    error: jsonBody.value,
-    meta: {
-      timestamp: Date.now(),
-      statusCode
-    }
-  }).merge(response)
+    success: true,
+    data: jsonBody.value,
+    timestamp: new Date().toISOString(),
+    version: 'v1'
+  })
 })
 
-// Intercept text responses to add charset
-app.capture('text', (textBody, response) => {
-  return response.header('Content-Type', 'text/plain; charset=utf-8')
-})
-
-// Intercept HTML responses
-app.capture('html', (htmlBody, response) => {
-  const html = htmlBody.value
-  // Inject analytics script
-  const modified = html.replace(
-    '</head>',
-    '<script>console.log("Page loaded")</script></head>'
-  )
-  return Response.html(modified).merge(response)
+// Now all JSON responses will be automatically wrapped
+app.get('/users').use(() => {
+  return Response.json({ users: ['Alice', 'Bob'] })
+  // Actual response:
+  // {
+  //   "success": true,
+  //   "data": { "users": ["Alice", "Bob"] },
+  //   "timestamp": "2024-01-01T00:00:00.000Z",
+  //   "version": "v1"
+  // }
 })
 ```
 
-### Response.custom - Custom Responses
+#### Multiple Response Type Interception
 
-`Response.custom` lets you directly manipulate Node.js native request and response objects.
+```typescript
+// Intercept file responses, add cache headers
+app.capture('file', (fileBody) => {
+  return Response.file(fileBody.value, fileBody.options)
+    .header('Cache-Control', 'public, max-age=31536000')
+    .header('X-Served-By', 'Farrow-HTTP')
+})
 
-#### Server-Sent Events (SSE)
+// Intercept HTML responses, inject security headers
+app.capture('html', (htmlBody) => {
+  return Response.html(htmlBody.value)
+    .header('X-Content-Type-Options', 'nosniff')
+    .header('X-Frame-Options', 'DENY')
+    .header('Content-Security-Policy', "default-src 'self'")
+})
+
+// Intercept text responses
+app.capture('text', (textBody) => {
+  return Response.text(textBody.value)
+    .header('X-Content-Type', 'text/plain')
+})
+
+// Intercept redirect responses
+app.capture('redirect', (redirectBody) => {
+  return Response.redirect(redirectBody.url, redirectBody.options)
+    .header('X-Redirect-Reason', 'API-Redirect')
+})
+```
+
+### Response.custom: Low-level Response Control
+
+`Response.custom` provides direct access to Node.js native `req` and `res` objects for implementing needs that standard response types cannot meet.
+
+#### Server-Sent Events (SSE) Implementation
 
 ```typescript
 app.get('/events').use(() => {
@@ -481,290 +438,412 @@ app.get('/events').use(() => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
     })
     
     // Send initial connection event
     res.write('event: connected\n')
-    res.write('data: {"status": "connected"}\n\n')
+    res.write(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
     
     // Send data periodically
-    let counter = 0
     const interval = setInterval(() => {
-      counter++
-      res.write(`event: message\n`)
-      res.write(`data: {"count": ${counter}}\n`)
-      res.write(`id: ${counter}\n\n`)
-      
-      if (counter >= 10) {
-        clearInterval(interval)
-        res.end()
-      }
+      res.write('event: heartbeat\n')
+      res.write(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
     }, 1000)
     
-    // Clean up when client disconnects
+    // Clean up connection
     req.on('close', () => {
+      clearInterval(interval)
+      console.log('SSE connection closed')
+    })
+    
+    req.on('error', (err) => {
+      console.error('SSE error:', err)
       clearInterval(interval)
     })
   })
 })
 ```
 
-#### File Streaming
+#### Long Polling Implementation
 
 ```typescript
-import { createReadStream } from 'fs'
-import { pipeline } from 'stream'
+const pendingRequests = new Map()
 
-app.get('/download/<file:string>').use((request) => {
-  const filename = request.params.file
+app.get('/poll/<channelId:string>').use((request) => {
+  const { channelId } = request.params
+  const timeout = parseInt(request.query.timeout) || 30000
   
-  return Response.custom(({ res }) => {
-    const stream = createReadStream(`./uploads/${filename}`)
-    
-    // Set download response headers
-    res.setHeader('Content-Type', 'application/octet-stream')
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-    
-    // Stream transfer
-    pipeline(stream, res, (err) => {
-      if (err) {
-        console.error('Stream error:', err)
-        if (!res.headersSent) {
-          res.statusCode = 500
-          res.end('Stream error')
-        }
-      }
-    })
-    
-    // Handle file not found
-    stream.on('error', () => {
-      if (!res.headersSent) {
-        res.statusCode = 404
-        res.end('File not found')
-      }
-    })
-  })
-})
-```
-
-### Response.merge - Response Merging
-
-`Response.merge` is used to merge properties of multiple response objects.
-
-```typescript
-// Create response enhancement functions
-function withCors(response: Response): Response {
-  const corsHeaders = Response
-    .header('Access-Control-Allow-Origin', '*')
-    .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE')
-    .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  
-  return Response.merge(response, corsHeaders)
-}
-
-function withCache(response: Response, maxAge: number): Response {
-  const cacheHeaders = Response
-    .header('Cache-Control', `public, max-age=${maxAge}`)
-    .header('Expires', new Date(Date.now() + maxAge * 1000).toUTCString())
-  
-  return Response.merge(response, cacheHeaders)
-}
-
-// Use response enhancement
-app.get('/api/data').use(() => {
-  const data = Response.json({ items: [] })
-  
-  // Chain enhancements
-  const enhanced = withCache(withCors(data), 3600)
-  return enhanced
-})
-
-// Merge responses in middleware
-app.use((request, next) => {
-  const startTime = Date.now()
-  const response = next(request)
-  
-  // Add performance tracking headers
-  const tracking = Response
-    .header('X-Response-Time', `${Date.now() - startTime}ms`)
-    .header('X-Server', 'Farrow')
-  
-  return Response.merge(response, tracking)
-})
-```
-
----
-
-## Practical Case: Comprehensive Application
-
-Let's build a complete example combining these advanced features.
-
-```typescript
-import { Http, Response } from 'farrow-http'
-import { createAsyncPipeline, createContext, createContainer, runWithContainer } from 'farrow-pipeline'
-import { ObjectType, ValidatorType, Validator } from 'farrow-schema'
-
-// === Custom Validators ===
-class StrongPasswordType extends ValidatorType<string> {
-  validate(input: unknown) {
-    const stringResult = Validator.validate(String, input)
-    if (stringResult.isErr) {
-      return this.Err('Password must be a string')
-    }
-    
-    const password = stringResult.value
-    
-    if (password.length < 8) {
-      return this.Err('Password must be at least 8 characters')
-    }
-    
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      return this.Err('Password must contain uppercase, lowercase and numbers')
-    }
-    
-    return this.Ok(password)
-  }
-}
-
-// === Schema Definitions ===
-class RegisterRequest extends ObjectType {
-  username = String
-  email = String
-  password = StrongPasswordType
-}
-
-// === Context Definitions ===
-const RequestIdContext = createContext<string>('')
-const UserContext = createContext<User | null>(null)
-
-// === Processing Pipeline ===
-const authPipeline = createAsyncPipeline<AuthRequest, AuthResponse>()
-
-// Lazy load authentication module
-authPipeline.useLazy(async () => {
-  const { authenticate } = await import('./auth')
-  
-  return async (request, next) => {
-    const result = await authenticate(request)
-    if (!result.success) {
-      return { success: false, error: 'Authentication failed' }
-    }
-    return next({ ...request, user: result.user })
-  }
-})
-
-// === Main Application ===
-const app = Http()
-
-// Request tracking middleware
-app.use((request, next) => {
-  const requestId = generateRequestId()
-  
-  // Create request-level Container
-  const container = createContainer({
-    [RequestIdContext]: requestId
-  })
-  
-  return runWithContainer(() => {
-    const startTime = Date.now()
-    const response = next(request)
-    
-    // Add tracking headers
-    return response
-      .header('X-Request-ID', requestId)
-      .header('X-Response-Time', `${Date.now() - startTime}ms`)
-  }, container)
-})
-
-// Unified response format
-app.capture('json', (jsonBody, response) => {
-  const requestId = RequestIdContext.get()
-  
-  return Response.json({
-    requestId,
-    timestamp: Date.now(),
-    ...jsonBody.value
-  }).merge(response)
-})
-
-// Register endpoint
-app.post('/register', {
-  body: RegisterRequest
-}).use(async (request) => {
-  // Manually validate additional business rules
-  const usernameCheck = await checkUsernameExists(request.body.username)
-  if (usernameCheck) {
-    return Response.status(400).json({ error: 'Username already exists' })
-  }
-  
-  // Use Pipeline for processing
-  const authResult = await authPipeline.run({
-    type: 'register',
-    data: request.body
-  })
-  
-  if (!authResult.success) {
-    return Response.status(400).json({ error: authResult.error })
-  }
-  
-  return Response.status(201).json({
-    user: authResult.user,
-    token: authResult.token
-  })
-})
-
-// SSE notification endpoint
-app.get('/notifications').use(() => {
   return Response.custom(({ req, res }) => {
-    const requestId = RequestIdContext.get()
-    const user = UserContext.get()
+    const requestId = Math.random().toString(36)
     
-    if (!user) {
-      res.writeHead(401)
-      res.end('Unauthorized')
+    // Check if data is immediately available
+    const immediateData = checkForData(channelId)
+    if (immediateData) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: immediateData }))
       return
     }
     
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'X-Request-ID': requestId
-    })
+    // Save pending request
+    pendingRequests.set(requestId, { res, channelId })
     
-    // Subscribe to user notifications
-    const unsubscribe = subscribeToUserNotifications(user.id, (notification) => {
-      res.write(`event: notification\n`)
-      res.write(`data: ${JSON.stringify(notification)}\n\n`)
-    })
+    // Set timeout
+    const timer = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      res.writeHead(204) // No Content
+      res.end()
+    }, timeout)
     
+    // Clean up when client disconnects
     req.on('close', () => {
-      unsubscribe()
+      clearTimeout(timer)
+      pendingRequests.delete(requestId)
     })
   })
 })
 
-app.listen(3000)
+// Notify all waiting requests when new data arrives
+function notifyChannel(channelId: string, data: any) {
+  for (const [requestId, { res, channelId: reqChannelId }] of pendingRequests) {
+    if (reqChannelId === channelId) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data }))
+      pendingRequests.delete(requestId)
+    }
+  }
+}
+```
+
+#### Chunked Transfer Implementation
+
+```typescript
+app.get('/large-data').use(() => {
+  return Response.custom(({ req, res }) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked'
+    })
+    
+    // Start JSON array
+    res.write('{"items":[')
+    
+    let first = true
+    const totalItems = 10000
+    
+    // Process large amounts of data in batches
+    function sendBatch(startIndex: number) {
+      const batchSize = 100
+      const endIndex = Math.min(startIndex + batchSize, totalItems)
+      
+      for (let i = startIndex; i < endIndex; i++) {
+        if (!first) res.write(',')
+        first = false
+        
+        res.write(JSON.stringify({
+          id: i,
+          data: `Item ${i}`,
+          timestamp: Date.now()
+        }))
+      }
+      
+      if (endIndex < totalItems) {
+        // Asynchronously process next batch
+        setImmediate(() => sendBatch(endIndex))
+      } else {
+        // End JSON array
+        res.write(']}')
+        res.end()
+      }
+    }
+    
+    sendBatch(0)
+  })
+})
+```
+
+### Http Constructor Options: Advanced Configuration
+
+#### basenames: Route Prefixes
+
+```typescript
+// Support multiple basenames
+const app = Http({
+  basenames: ['/api', '/v1', '/app']
+})
+
+// This route will match multiple paths:
+// /api/users, /v1/users, /app/users
+app.get('/users').use(() => Response.json({ users: [] }))
+```
+
+#### logger: Custom Logging
+
+```typescript
+const app = Http({
+  logger: false  // Disable default logging
+})
+
+// Or custom logging
+const app = Http({
+  logger: {
+    info: (message) => console.log(`INFO: ${message}`),
+    warn: (message) => console.warn(`WARN: ${message}`),
+    error: (message) => console.error(`ERROR: ${message}`)
+  }
+})
+```
+
+### Router Advanced Features
+
+#### Router.match: Pattern Matching
+
+```typescript
+import { Router } from 'farrow-http'
+import { String, Literal } from 'farrow-schema'
+
+const router = Router()
+
+// Complex matching using match
+router.match({
+  url: '/admin/<path+:string>',  // One or more path segments
+  method: ['GET', 'POST']  // Only match GET and POST
+}).use((request, next) => {
+  // Admin route preprocessing
+  const user = UserContext.get()
+  if (!user || user.role !== 'admin') {
+    return Response.status(403).json({ error: 'Admin required' })
+  }
+  
+  // Access path parameters
+  const adminPath = request.params.path  // string[] type
+  console.log('Admin accessing:', adminPath.join('/'))
+  
+  return next(request)
+})
+
+// Complex matching conditions - headers using Schema
+router.match({
+  url: '/api/<segments*:string>',  // Zero or more path segments
+  headers: {
+    'content-type': Literal('application/json')  // Using Schema definition
+  }
+}).use((request, next) => {
+  // Only handle JSON requests
+  const apiSegments = request.params.segments  // string[] | undefined type
+  console.log('API path segments:', apiSegments)
+  
+  return next(request)
+})
+
+// More complex matching example
+router.match({
+  url: '/api/<version:string>/users',  // Match any version path segment
+  method: ['POST', 'PUT'],
+  headers: {
+    'authorization': String,  // Required auth header
+    'content-type': Literal('application/json')
+  },
+  body: {
+    name: String,
+    email: String
+  }
+}).use((request, next) => {
+  // All conditions met to execute here
+  const { version } = request.params  // string type
+  const { authorization } = request.headers
+  const { name, email } = request.body
+  
+  console.log('API version:', version)
+  return next(request)
+})
+
+// To match specific version values, use Literal union types
+router.post('/api/<version:v1|v2>/users', {
+  headers: {
+    'authorization': String,
+    'content-type': Literal('application/json')
+  },
+  body: {
+    name: String,
+    email: String
+  }
+}).use((request, next) => {
+  // Get type-safe route parameters here
+  const { version } = request.params  // 'v1' | 'v2' type
+  const { authorization } = request.headers
+  const { name, email } = request.body
+  
+  return next(request)
+})
+```
+
+#### Router.use Advanced Usage
+
+```typescript
+const router = Router()
+
+// Path matching middleware
+router.use('/public/<path*:string>', (request, next) => {
+  // Middleware effective only for /public/* paths
+  return next(request)
+})
+
+// Method filtering - judge within middleware
+router.use((request, next) => {
+  // Middleware effective only for write operations
+  if (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH') {
+    // Execute write operation related logic
+    console.log('Processing write operation:', request.method)
+  }
+  return next(request)
+})
+
+// Combined conditions - use match for compound matching
+router.match({
+  url: '/api/v2/<path*:string>',
+  method: 'POST',
+  headers: { 'authorization': String }
+}).use((request, next) => {
+  // Compound condition matching
+  return next(request)
+})
+```
+
+### Error Boundaries and Recovery
+
+#### onSchemaError: Schema Error Handling
+
+```typescript
+// Global Schema error handling
+app.match({
+  url: '/<path*:string>'  // Match all paths
+}, {
+  onSchemaError: (error, request, next) => {
+    console.error('Schema validation failed:', error)
+    
+    return Response.status(400).json({
+      error: 'Validation Error',
+      details: {
+        path: error.path?.join('.'),
+        message: error.message,
+        received: typeof error.value
+      }
+    })
+  }
+})
+
+// Specific route Schema error handling
+app.post('/users', {
+  body: { email: String, password: String }
+}, {
+  onSchemaError: (error, request, next) => {
+    if (error.path?.includes('email')) {
+      return Response.status(400).json({
+        error: 'Invalid email address'
+      })
+    }
+    
+    if (error.path?.includes('password')) {
+      return Response.status(400).json({
+        error: 'Password is required'
+      })
+    }
+    
+    return Response.status(400).json({
+      error: 'Invalid request data'
+    })
+  }
+}).use((request) => {
+  // Handle valid requests
+  return Response.json({ success: true })
+})
+```
+
+### Advanced Middleware Patterns
+
+#### Conditional Middleware
+
+```typescript
+const conditionalMiddleware = (condition: (req: any) => boolean, middleware: any) => {
+  return (request, next) => {
+    if (condition(request)) {
+      return middleware(request, next)
+    }
+    return next(request)
+  }
+}
+
+// Usage examples
+app.use(
+  conditionalMiddleware(
+    req => req.method === 'POST',
+    rateLimitMiddleware
+  )
+)
+
+app.use(
+  conditionalMiddleware(
+    req => req.headers['x-debug'] === 'true',
+    debugMiddleware
+  )
+)
+```
+
+#### Async Middleware Composition
+
+```typescript
+const asyncMiddleware = (...middlewares) => {
+  return async (request, next) => {
+    // Execute async middleware sequentially
+    let modifiedRequest = request
+    
+    for (const middleware of middlewares) {
+      const result = await middleware(modifiedRequest, (req) => req)
+      modifiedRequest = result
+    }
+    
+    return next(modifiedRequest)
+  }
+}
+
+// Usage
+app.use(asyncMiddleware(
+  loadUserMiddleware,
+  loadPermissionsMiddleware,
+  loadPreferencesMiddleware
+))
 ```
 
 ---
 
 ## Summary
 
-This tutorial has covered the advanced features of the Farrow framework in depth:
+This tutorial introduced the main advanced features of the Farrow framework:
 
 ### farrow-pipeline
-- **usePipeline**: Enables modular composition of Pipelines
-- **Container**: Provides request-level context isolation
-- **useLazy**: Performance optimization through lazy loading
+- **usePipeline**: Context-preserving Pipeline composition
+- **Container**: Context isolation and management
+- **useLazy**: Lazy loading middleware
 
 ### farrow-schema
-- **Validator.validate**: Core API for manual data validation
-- **ValidatorType**: Base class for creating custom validators
-- **required**: Schema transformation utility functions
+- **Validator.validate**: Manual data validation
+- **ValidatorType**: Custom validators
 
 ### farrow-http
-- **Response.capture**: Unified handling of specific response types
-- **Response.custom**: Direct manipulation of native objects for special functionality
-- **Response.merge**: Flexible composition of response properties
+- **Response.capture**: Response type interception
+- **Response.custom**: Low-level response control
+- **Router.route**: Nested routing
 
-These advanced features enable you to build more complex, efficient, and maintainable applications.
+These features provide powerful foundational capabilities for building complex applications.
+
+---
+
+## Next Steps
+
+📚 **[API Reference](/api/)**  
+Browse complete API documentation
+
+🚀 **[Examples](/examples/)**  
+Learn practical techniques through complete projects

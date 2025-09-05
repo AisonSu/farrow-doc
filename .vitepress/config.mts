@@ -46,7 +46,8 @@ export default defineConfig({
                 { text: '├ 响应构建', link: '/guide/essentials#响应构建' },
                 { text: '├ Context 系统', link: '/guide/essentials#context-系统' },
                 { text: '├ 错误处理', link: '/guide/essentials#错误处理' },
-                { text: '└ 实战：博客 API', link: '/guide/essentials#实战-构建完整的博客-api' }
+                { text: '├ 实战：博客 API', link: '/guide/essentials#实战-构建完整的博客-api' },
+                { text: '└ 性能优化技巧', link: '/guide/essentials#性能优化技巧' }
               ]
             },
             {
@@ -56,8 +57,7 @@ export default defineConfig({
                 { text: '├ Pipeline 高级特性', link: '/guide/advanced#farrow-pipeline-高级特性' },
                 { text: '├ Schema 高级特性', link: '/guide/advanced#farrow-schema-高级特性' },
                 { text: '├ HTTP 高级特性', link: '/guide/advanced#farrow-http-高级特性' },
-                { text: '├ 实战案例', link: '/guide/advanced#实战案例-综合应用' },
-                { text: '哲学与最佳实践', link: '/guide/philosophy-and-practices' }
+                { text: '└ 哲学与最佳实践', link: '/guide/philosophy-and-practices' }
               ]
             }
           ],
@@ -155,24 +155,24 @@ export default defineConfig({
               text: 'Essentials',
               items: [
                 { text: 'Tutorial', link: '/en/guide/essentials' },
-                { text: '├ Routing System', link: '/en/guide/essentials#routing-system' },
-                { text: '├ Schema Definition', link: '/en/guide/essentials#schema-definition-and-validation' },
+                { text: '├ Detailed Routing System', link: '/en/guide/essentials#detailed-routing-system' },
+                { text: '├ Schema Definition and Validation', link: '/en/guide/essentials#schema-definition-and-validation' },
                 { text: '├ Middleware System', link: '/en/guide/essentials#middleware-system' },
                 { text: '├ Response Building', link: '/en/guide/essentials#response-building' },
                 { text: '├ Context System', link: '/en/guide/essentials#context-system' },
                 { text: '├ Error Handling', link: '/en/guide/essentials#error-handling' },
-                { text: '└ Tutorial: Blog API', link: '/en/guide/essentials#tutorial-building-a-complete-blog-api' }
+                { text: '├ Practical Example: Blog API', link: '/en/guide/essentials#practical-example-building-a-complete-blog-api' },
+                { text: '└ Performance Optimization Tips', link: '/en/guide/essentials#performance-optimization-tips' }
               ]
             },
             {
               text: 'Advanced',
               items: [
                 { text: 'Deep Dive', link: '/en/guide/advanced' },
-                { text: '├ Pipeline Advanced', link: '/en/guide/advanced#farrow-pipeline-advanced-features' },
-                { text: '├ Schema Advanced', link: '/en/guide/advanced#farrow-schema-advanced-features' },
-                { text: '├ HTTP Advanced', link: '/en/guide/advanced#farrow-http-advanced-features' },
-                { text: '├ Real-world Examples', link: '/en/guide/advanced#real-world-examples' },
-                { text: 'Philosophy & Best Practices', link: '/en/guide/philosophy-and-practices' }
+                { text: '├ Pipeline Advanced Features', link: '/en/guide/advanced#farrow-pipeline-advanced-features' },
+                { text: '├ Schema Advanced Features', link: '/en/guide/advanced#farrow-schema-advanced-features' },
+                { text: '├ HTTP Advanced Features', link: '/en/guide/advanced#farrow-http-advanced-features' },
+                { text: '└ Philosophy & Best Practices', link: '/en/guide/philosophy-and-practices' }
               ]
             }
           ],

@@ -1,143 +1,265 @@
-# farrow-http API 参考
+# Farrow HTTP API 参考文档
 
-farrow-http 是一个强大的 HTTP 服务器和路由系统，提供类型安全的路由定义和请求处理能力。
+## 概述
 
-## 安装
+Farrow HTTP 是一个 TypeScript 优先的 Web 框架，提供类型安全的路由和自动验证功能。它构建在 farrow-pipeline 中间件系统和 farrow-schema 验证系统之上，既提供强大的功能，又提供出色的开发者体验。
+
+## 快速导航
+
+### 入门指南
+- [安装和快速开始](#安装和快速开始) - 5分钟上手
+- [基础示例](#基础示例) - 常用代码模板
+
+### 核心 API
+- [服务器创建](#服务器创建) - Http(), Https(), 配置选项
+- [路由定义](#路由定义) - get(), post(), match() 等
+- [响应构建](#响应构建) - Response 对象和方法
+- [中间件](#中间件) - use(), 洋葱模型, 错误处理
+
+### 高级功能  
+- [路由器系统](#路由器系统) - Router(), route(), 模块化
+- [上下文管理](#上下文管理) - Context, hooks, 请求隔离
+- [静态文件](#静态文件) - serve(), 安全保护
+- [测试支持](#测试) - 测试配置和示例
+
+### 参考资料
+- [API 速查表](#api-速查表) - 常用方法快速查找  
+- [完整示例](#完整示例) - 生产级应用代码
+
+## 安装和快速开始
+
+### 安装
 
 ```bash
-npm install farrow-http
+npm install farrow-http farrow-schema farrow-pipeline
 ```
 
-## 核心 API
-
-### Http(options?)
-
-创建 HTTP 服务器实例。
+### 30秒快速开始
 
 ```typescript
-function Http(options?: HttpPipelineOptions): HttpPipeline
+import { Http, Response } from 'farrow-http'
 
-type HttpPipelineOptions = {
-  basenames?: string[]                    // 基础路径列表
-  body?: BodyOptions                      // 请求体解析选项
-  cookie?: CookieOptions                  // Cookie 解析选项
-  query?: QueryOptions                    // 查询参数解析选项
-  contexts?: ContextFactory               // 上下文工厂函数
-  logger?: boolean | HttpLoggerOptions    // 日志配置
-  errorStack?: boolean                    // 是否显示错误堆栈
-}
+const app = Http()
+app.get('/hello').use(() => Response.json({ message: 'Hello Farrow!' }))
+app.listen(3000)
 ```
 
-#### 示例用法
+### 重要提示：异步上下文自动启用
+
+**farrow-http 框架会自动启用异步上下文追踪功能**。当你创建 `Http()` 或 `Https()` 实例时，框架会自动调用 `asyncTracerImpl.enable()` 来确保 Context 在异步操作中正确传递。
 
 ```typescript
 import { Http } from 'farrow-http'
 
-// 基本用法
+// 框架会自动启用异步追踪，无需手动调用
+const app = Http()  // 内部自动执行 asyncTracerImpl.enable()
+```
+
+**这意味着：**
+- ✅ **无需手动配置** - 不需要手动导入和调用 `asyncTracerImpl.enable()`
+- ✅ **Context 自动传递** - 在 `async/await`、`Promise`、`setTimeout` 等异步操作中，Context 会自动正确传递
+- ✅ **请求级隔离** - 每个 HTTP 请求都有独立的 Context，避免并发请求间的状态污染
+
+如果你需要在纯 farrow-pipeline 环境中使用（不依赖 farrow-http），则需要手动启用：
+
+```typescript
+import * as asyncTracerImpl from 'farrow-pipeline/asyncTracerImpl.node'
+
+// 仅在纯 farrow-pipeline 环境中需要手动启用
+asyncTracerImpl.enable()
+```
+
+### 基础示例
+
+#### 1. 简单 API 服务器
+```typescript
+import { Http, Response } from 'farrow-http'
+
 const app = Http()
 
-// 带配置的用法
-const app = Http({
-  basenames: ['/api', '/v1'],
-  body: {
-    limit: '10mb',
-    encoding: 'utf8'
-  },
-  cookie: {
-    decode: decodeURIComponent
-  },
-  query: {
-    depth: 5,
-    arrayLimit: 100
-  },
-  logger: {
-    transporter: (str) => console.log(str),
-    ignoreIntrospectionRequestOfFarrowApi: false
-  },
-  contexts: ({ req, requestInfo, basename }) => ({
-    requestId: generateRequestId(),
-    startTime: Date.now()
+// 基础路由
+app.get('/').use(() => Response.json({ message: 'API 服务运行中' }))
+app.get('/health').use(() => Response.json({ status: 'ok' }))
+
+app.listen(3000, () => console.log('服务器启动在 http://localhost:3000'))
+```
+
+#### 2. 带类型验证的路由
+```typescript
+import { Http, Response } from 'farrow-http'
+import { ObjectType, String, Int } from 'farrow-schema'
+
+const app = Http()
+
+// 路径参数自动验证和类型推导
+app.get('/user/<id:int>').use((req) => {
+  const userId = req.params.id  // 类型: number
+  return Response.json({ id: userId, name: `用户${userId}` })
+})
+
+// 查询参数验证
+app.get('/search?<q:string>&<page?:int>').use((req) => {
+  const { q, page = 1 } = req.query
+  return Response.json({ 
+    query: q,      // 类型: string
+    page,          // 类型: number
+    results: []
   })
 })
+
+app.listen(3000)
 ```
 
-### HttpPipeline 方法
+#### 3. 请求体验证
+```typescript
+import { Http, Response } from 'farrow-http'
+import { ObjectType, String, Int, Optional } from 'farrow-schema'
 
-#### handle() - 处理 HTTP 请求
+class CreateUserInput extends ObjectType {
+  name = String
+  email = String  
+  age = Optional(Int)
+}
 
-处理 HTTP 请求，通常用于集成到其他框架。
+const app = Http()
+
+app.post('/users', { body: CreateUserInput }).use((req) => {
+  // req.body 已通过验证，类型安全
+  const { name, email, age } = req.body
+  const user = { id: Date.now(), name, email, age }
+  return Response.status(201).json(user)
+})
+
+app.listen(3000)
+```
+
+#### 4. 中间件和错误处理
+```typescript
+import { Http, Response, HttpError } from 'farrow-http'
+
+const app = Http({ logger: true })
+
+// 全局认证中间件
+app.use((req, next) => {
+  const token = req.headers?.authorization
+  if (req.pathname.startsWith('/protected') && !token) {
+    throw new HttpError('需要授权', 401)
+  }
+  return next(req)
+})
+
+// 受保护的路由
+app.get('/protected/profile').use(() => {
+  return Response.json({ user: 'profile data' })
+})
+
+// 全局错误处理
+app.use(async (req, next) => {
+  try {
+    return await next(req)
+  } catch (error) {
+    return Response.status(error.statusCode || 500).json({
+      error: error.message
+    })
+  }
+})
+
+app.listen(3000)
+```
+
+---
+
+## 服务器创建
+
+### `Http(options?: HttpPipelineOptions): HttpPipeline`
+
+创建具有全面配置选项的 HTTP 服务器实例。
 
 ```typescript
-handle(req: IncomingMessage, res: ServerResponse, options?: HttpHandlerOptions): MaybeAsync<void>
-
-type HttpHandlerOptions = {
-  onLast?: CustomBodyHandler  // 当没有路由匹配时的自定义处理函数
+type HttpPipelineOptions = {
+  basenames?: string[]          // 基础路径
+  body?: BodyOptions           // 请求体解析选项
+  cookie?: CookieParseOptions  // Cookie 解析选项
+  query?: IParseOptions        // 查询参数解析选项
+  contexts?: (params: { req: IncomingMessage; requestInfo: RequestInfo; basename:string }) => ContextStorage // 上下文注入函数
+  logger?: boolean | {
+    transporter?: (str: string) => void
+    ignoreIntrospectionRequestOfFarrowApi?: boolean // 是否忽略 farrow-api 的内省请求日志，默认为 true
+  }
+  errorStack?: boolean         // 是否显示错误堆栈
 }
 ```
 
-**示例：**
-
+**完整配置示例：**
 ```typescript
-// 集成到 Express
-expressApp.use((req, res) => {
-  app.handle(req, res)
+const app = Http({
+  basenames: ['/api/v1'], // 可选的基础路径
+  logger: true,           // 启用日志记录
+  body: {
+    limit: '10mb',        // 请求体大小限制
+    encoding: 'utf8'      // 默认编码
+  },
+  cookie: {
+    decode: decodeURIComponent,  // Cookie 值解码器
+    maxAge: 86400000,           // 默认最大存活时间（24 小时）
+    httpOnly: true,             // 默认 httpOnly 设置
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'             // CSRF 保护
+  },
+  query: {
+    depth: 5,            // 查询对象的最大嵌套深度
+    arrayLimit: 100,     // 查询参数中数组的最大长度
+    delimiter: '&',      // 查询参数分隔符
+    allowDots: true,     // 允许点符号：?user.name=value
+    parseArrays: true    // 解析数组语法：?tags[0]=a&tags[1]=b
+  },
+  errorStack: process.env.NODE_ENV === 'development'
 })
 ```
 
-#### listen() - 启动服务器
+### 服务器方法
 
-启动 HTTP 服务器并监听指定端口。
+#### `listen(port: number, callback?: () => void)`
 
-```typescript
-listen(...args: Parameters<Server['listen']>): Server
-```
-
-**示例：**
+启动服务器并监听指定端口。
 
 ```typescript
-// 监听端口
 app.listen(3000)
-app.listen(3000, 'localhost')
-app.listen(3000, () => console.log('Server started'))
-
-// 监听 Unix Socket
-app.listen('/tmp/server.sock')
+app.listen(3000, () => console.log('服务器在端口 3000 启动'))
 ```
 
-#### server() - 创建服务器实例
+#### `server()`
 
-创建 HTTP 服务器但不启动监听。
+获取 Node.js HTTP 服务器实例（测试时必需）。
 
 ```typescript
-server(): Server
+const server = app.server()  // 返回 http.Server 实例
 ```
 
-**示例：**
+### BodyOptions
+
+请求体解析选项（基于 co-body 库）：
 
 ```typescript
-const server = app.server()
-server.listen(3000)
-
-// 用于测试
-import request from 'supertest'
-const response = await request(app.server()).get('/')
-```
-
-## HTTPS 支持
-
-### Https(options?)
-
-创建 HTTPS 服务器实例。
-
-```typescript
-function Https(options?: HttpsPipelineOptions): HttpsPipeline
-
-type HttpsPipelineOptions = HttpPipelineOptions & {
-  tls?: HttpsOptions  // TLS/SSL 配置
+type BodyOptions = {
+  limit?: string | number          // 大小限制，例如 '1mb', '10kb' 或 1024000
+  encoding?: BufferEncoding        // 字符编码，默认 'utf8'
+  length?: number                  // 内容长度
+  strict?: boolean                 // JSON 严格模式，默认 true
+  queryString?: object             // 查询字符串解析选项
+  jsonTypes?: string[]             // JSON content-type 列表
+  formTypes?: string[]             // 表单 content-type 列表
+  textTypes?: string[]             // 文本 content-type 列表
 }
 ```
 
-**示例：**
+---
+
+## HTTPS 服务器
+
+### `Https(options?: HttpsPipelineOptions): HttpPipeline`
+
+创建带有 TLS/SSL 配置的 HTTPS 服务器。
 
 ```typescript
 import { Https } from 'farrow-http'
@@ -145,721 +267,925 @@ import fs from 'fs'
 
 const app = Https({
   tls: {
-    key: fs.readFileSync('path/to/private-key.pem'),
-    cert: fs.readFileSync('path/to/certificate.pem')
-  }
+    key: fs.readFileSync('private-key.pem'),
+    cert: fs.readFileSync('certificate.pem')
+  },
+  // ... 其他 HttpPipelineOptions
 })
 
 app.listen(443)
 ```
 
-## Response - 响应构建器
+---
 
-### 静态方法
+## 路由定义
 
-#### Response.json() - JSON 响应
+### HTTP 方法路由
 
 ```typescript
-static json(value: JsonType): Response
+// GET 请求
+http.get('/users', () => Response.json({ users: [] }))
+
+// 带请求体验证的 POST 请求
+http.post('/users', { body: UserSchema }).use((req) => {
+  return Response.status(201).json(req.body)
+})
+
+// 带路径参数和请求体的 PUT 请求
+http.put('/users/<id:int>', { body: UpdateUserSchema }).use((req) => {
+  return Response.json({ id: req.params.id, ...req.body })
+})
+
+// PATCH 请求
+http.patch('/users/<id:int>/email', {
+  body: { email: String }
+}).use((req) => {
+  return Response.json({ id: req.params.id, email: req.body.email })
+})
+
+// DELETE 请求
+http.delete('/users/<id:int>', (req) => {
+  return Response.status(204).empty()
+})
+
+// HEAD 请求
+http.head('/users', () => Response.status(200).empty())
+
+// OPTIONS 请求
+http.options('/users', () => {
+  return Response
+    .header('Allow', 'GET, POST, PUT, DELETE')
+    .status(200)
+    .empty()
+})
+
+// 匹配所有方法
+http.all('/catch-all', (req) => {
+  return Response.json({ method: req.method })
+})
 ```
 
-**示例：**
+### 高级路由匹配
 
 ```typescript
-return Response.json({ message: 'Success', data: [] })
-return Response.json(null)
-return Response.json(42)
+// 带阻塞选项的自定义匹配
+http.match({
+  url: '/api/users/<id:int>',
+  method: 'GET'
+}, {
+  block: true,  // 如果此路由不匹配，停止在这里（返回 404）
+  onSchemaError: (error, input, next) => {
+    return Response.status(400).json({
+      error: '验证失败',
+      details: error.message,
+      field: error.path?.join('.')
+    })
+  }
+}).use((request) => {
+  return Response.json({ userId: request.params.id })
+})
 ```
 
-#### Response.text() - 纯文本响应
+---
+
+### 路由模式和自动验证
+
+#### 参数类型（自动验证）
+
+Farrow HTTP 基于 URL 模式提供强大的自动验证功能：
 
 ```typescript
-static text(value: string): Response
+// 路径参数 - 自动验证和类型化
+app.get('/post/<id:int>').use((req) => {
+  req.params.id  // 类型：number，验证为整数
+})
+
+app.get('/user/<name:string>').use((req) => {
+  req.params.name  // 类型：string
+})
+
+app.get('/price/<value:float>').use((req) => {
+  req.params.value  // 类型：number，验证为浮点数
+})
+
+app.get('/active/<flag:boolean>').use((req) => {
+  req.params.flag  // 类型：boolean
+})
+
+app.get('/user/<userId:id>').use((req) => {
+  req.params.userId  // 类型：string，验证为非空标识符
+})
+
+// 路径中的联合类型
+app.get('/posts/<status:draft|published|archived>').use((req) => {
+  req.params.status  // 类型：'draft' | 'published' | 'archived'
+})
+
+// 带大括号的字面量类型（精确字符串匹配）
+app.get('/api/<version:{v1}|{v2}>').use((req) => {
+  req.params.version  // 类型：'v1' | 'v2'
+})
+
+// 带修饰符的数组参数
+app.get('/tags/<tags+:string>').use((req) => {
+  req.params.tags  // 类型：string[]（一个或多个）
+})
+
+app.get('/categories/<cats*:string>').use((req) => {
+  req.params.cats  // 类型：string[] | undefined（零个或多个）
+})
+
+// 可选参数
+app.get('/user/<name?:string>').use((req) => {
+  req.params.name  // 类型：string | undefined（可选）
+})
+
+// 参数修饰符总结：
+// <param:type>   - 必需参数
+// <param?:type>  - 可选参数（type | undefined）
+// <param+:type>  - 一个或多个（type[]）
+// <param*:type>  - 零个或多个（type[] | undefined）
 ```
 
-**示例：**
+### 带自动验证的查询参数
 
 ```typescript
-return Response.text('Hello, World!')
+// 路径参数 + 查询参数与自动验证和类型推断
+http.get('/<category:string>?<search:string>&<page?:int>').use((req) => {
+  // req.params.category 是 string（必需，来自路径）
+  // req.query.search 是 string（必需，来自查询）
+  // req.query.page 是 number | undefined（可选）
+  const { category } = req.params  // 自动验证为 string
+  const { search, page = 1 } = req.query  // 自动验证
+  return Response.json({ category, search, page })
+})
+
+// 查询中的字面量值（精确匹配）
+http.get('/products?<sort:asc|desc>&status=active').use((req) => {
+  // req.query.sort 是 'asc' | 'desc'（联合类型）
+  // req.query.status 是 'active'（字面量字符串）
+  return Response.json({
+    sort: req.query.sort,     // 类型：'asc' | 'desc'
+    status: req.query.status   // 类型：'active'（字面量）
+  })
+})
+
+// 复杂查询示例
+http.get('/search?<q:string>&<tags*:string>&<author?:int>&<limit?:int>').use((req) => {
+  const { q, tags, author, limit = 10 } = req.query
+  // q: string（必需）
+  // tags: string[] | undefined（零个或多个）
+  // author: number | undefined（可选）
+  // limit: number | undefined（可选，有默认值）
+  
+  return Response.json({
+    query: q,
+    tags: tags || [],
+    authorId: author,
+    limit,
+    results: []
+  })
+})
 ```
 
-#### Response.html() - HTML 响应
+### 带 Schema 的请求体
 
 ```typescript
-static html(value: string): Response
+import { ObjectType, String, Int, List, Optional } from 'farrow-schema'
+
+class CreateUserInput extends ObjectType {
+  name = String
+  email = String
+  age = Optional(Int)
+}
+
+class UpdateUserInput extends ObjectType {
+  name = Optional(String)
+  email = Optional(String)
+  age = Optional(Int)
+}
+
+// 带请求体 schema 和验证错误处理的 POST 请求
+http.post('/users', {
+  body: CreateUserInput
+}, {
+  onSchemaError: (error, input, next) => {
+    // error.message - 验证错误消息
+    // error.path - 字段路径，如 ['body', 'email']
+    // error.value - 无效的值
+    // input - 请求对象 (RequestInfo)
+    // next - 继续到下一个中间件
+    
+    return Response.status(400).json({
+      error: '验证失败',
+      field: error.path?.join('.'),
+      message: error.message,
+      received: error.value
+    })
+  }
+}).use((req) => {
+  const { name, email, age } = req.body
+  const user = { id: 1, name, email, age }
+  return Response.json(user)
+})
 ```
 
-**示例：**
+### 高级 Schema 匹配
 
 ```typescript
-return Response.html('<h1>Welcome</h1>')
+type RouterPipeline['match']=<U extends string, T extends RouterUrlSchema<U>>(
+    schema: T,
+    options?: MatchOptions,
+  ): AsyncPipeline<TypeOfUrlSchema<T>, Response>
+
+type RouterUrlSchema = {
+  url: string                         // URL 模式（支持模板字面量类型）
+  method?: string | string[]          // HTTP 方法
+  body?: Schema.FieldDescriptor       // 请求体验证
+  headers?: RouterSchemaDescriptor    // 请求标头验证
+  cookies?: RouterSchemaDescriptor    // Cookie 验证
+}
+
+type MatchOptions = {
+  block?: boolean                     // 是否阻塞不匹配的请求，默认 false
+  onSchemaError?(                     // 验证错误处理器
+    error: ValidationError,
+    input: RequestInfo,
+    next: Next<RequestInfo, MaybeAsyncResponse>
+  ): MaybeAsyncResponse | void
+}
+
+// 使用详细 Schema 进行复杂验证
+app.match({
+  url: '/api/users/<id:int>?<expand?:string>',
+  method: ['GET', 'PUT'],
+  body: { name: String, email: String },
+  headers: { authorization: String }
+}, {
+  block: true,  // 阻塞模式：验证失败直接返回错误
+  onSchemaError: (error, input, next) => {
+    console.log('错误路径:', error.path)     // ['body', 'profile', 'email']
+    console.log('用户输入:', error.value)    // 用户实际输入的值
+    console.log('错误消息:', error.message)  // 详细错误描述
+    
+    return Response.status(400).json({
+      error: '数据验证失败',
+      field: error.path?.join('.'),         // 'body.profile.email'
+      message: error.message,
+      received: error.value,
+      hint: '请检查输入格式是否正确'
+    })
+  }
+}).use((req) => {
+  // req.body 已验证且类型安全
+  const { id } = req.params      // number
+  const { expand } = req.query   // string | undefined
+  const { name, email } = req.body
+  return Response.json({ id, name, email })
+})
 ```
 
-#### Response.redirect() - 重定向响应
+### ValidationError
+
+验证错误类型定义：
 
 ```typescript
-static redirect(url: string, options?: RedirectOptions): Response
-
-type RedirectOptions = {
-  usePrefix?: boolean  // 是否使用路径前缀，默认 true
+type ValidationError = {
+  message: string                     // 错误描述
+  path?: (string | number)[]          // 错误字段路径
+  value?: any                         // 导致错误的值
+  schema?: any                        // 相关的 Schema 定义
 }
 ```
 
-**示例：**
+---
+
+## 响应构建
+
+### JSON 响应
 
 ```typescript
-return Response.redirect('/login')
-return Response.redirect('https://example.com')
-return Response.redirect('/api/users', { usePrefix: false })
+// 简单 JSON
+Response.json({ message: 'Hello' })
+
+// 带状态码
+Response.status(201).json({ id: 1 })
+
+// 带标头
+Response.header('X-Total-Count', '100').json({ items: [] })
+
+// 链式调用多个
+Response
+  .status(200)
+  .header('Cache-Control', 'max-age=3600')
+  .header('X-API-Version', '1.0')
+  .json({ data: [] })
 ```
 
-#### Response.file() - 文件响应
+### 文本响应
 
 ```typescript
-static file(filename: string, options?: FileBodyOptions): Response
+Response.text('纯文本响应')
+Response.status(404).text('未找到')
 ```
 
-**示例：**
+### HTML 响应
 
 ```typescript
-return Response.file('./uploads/document.pdf')
-return Response.file('./large-file.zip', { 
-  start: 0, 
-  end: 1024 * 1024 // 只读取前 1MB
+Response.html('<h1>Hello World</h1>')
+Response.status(200).html(`
+  <!DOCTYPE html>
+  <html>
+    <body><h1>欢迎</h1></body>
+  </html>
+`)
+```
+
+### 文件响应
+
+创建支持流式传输和范围请求的文件响应。
+
+```typescript
+// 基本文件响应
+Response.file('./uploads/document.pdf')
+
+// 带内容类型
+Response.file('./images/logo.png', 'image/png')
+
+// 带流控制选项
+Response.file('./large-file.zip', {
+  start: 0,
+  end: 1024 * 1024 - 1,  // 只读取前 1MB
+  highWaterMark: 1024 * 1024  // 1MB 缓冲区大小
 })
-```
 
-#### Response.stream() - 流响应
-
-```typescript
-static stream(stream: Stream): Response
-```
-
-**示例：**
-
-```typescript
-import fs from 'fs'
-
-return Response.stream(fs.createReadStream('./data.csv'))
-```
-
-#### Response.buffer() - 二进制响应
-
-```typescript
-static buffer(buffer: Buffer): Response
-```
-
-**示例：**
-
-```typescript
-const data = Buffer.from('binary data')
-return Response.buffer(data)
-```
-
-#### Response.empty() - 空响应
-
-```typescript
-static empty(): Response
-```
-
-**示例：**
-
-```typescript
-return Response.empty()  // 204 No Content
-```
-
-#### Response.custom() - 自定义响应
-
-```typescript
-static custom(handler?: CustomBodyHandler): Response
-
-type CustomBodyHandler = (params: {
-  req: IncomingMessage
-  res: ServerResponse
-  requestInfo: RequestInfo
-  responseInfo: Omit<ResponseInfo, 'body'>
-}) => void
-```
-
-**示例：**
-
-```typescript
-return Response.custom(({ res }) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' })
-  res.end('Custom response')
-})
-```
-
-### 实例方法
-
-#### status() - 设置状态码
-
-```typescript
-status(code: number, message?: string): Response
-```
-
-**示例：**
-
-```typescript
-return Response
-  .json({ error: 'Not Found' })
-  .status(404)
-  .status(500, 'Internal Server Error')
-```
-
-#### header() / headers() - 设置响应头
-
-```typescript
-header(name: string, value: Value): Response
-headers(headers: Headers): Response
-```
-
-**示例：**
-
-```typescript
-return Response
-  .json(data)
-  .header('Cache-Control', 'no-cache')
-  .header('X-Request-ID', requestId)
-  .headers({
-    'Cache-Control': 'no-cache',
-    'X-Request-ID': requestId,
-    'X-API-Version': 'v1'
-  })
-```
-
-#### cookie() / cookies() - 设置 Cookie
-
-```typescript
-cookie(name: string, value: Value | null, options?: CookieOptions): Response
-cookies(cookies: Record<string, Value | null>, options?: CookieOptions): Response
-```
-
-**示例：**
-
-```typescript
-return Response
-  .json(user)
-  .cookie('sessionId', sessionId, {
-    httpOnly: true,
-    secure: true,
-    maxAge: 24 * 60 * 60 * 1000 // 24 小时
-  })
-  .cookie('oldCookie', null) // 删除 Cookie
-  .cookies({
-    sessionId: sessionId,
-    theme: 'dark',
-    oldSession: null // 删除
-  }, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production'
-  })
-```
-
-#### vary() - 设置 Vary 响应头
-
-```typescript
-vary(...fields: string[]): Response
-```
-
-**示例：**
-
-```typescript
-return Response
-  .json(data)
-  .vary('Accept-Encoding', 'User-Agent')
-```
-
-#### attachment() - 设置附件下载
-
-```typescript
-attachment(filename?: string, options?: ContentDispositionOptions): Response
-```
-
-**示例：**
-
-```typescript
-return Response
-  .file('./report.pdf')
+// 与附件结合用于下载
+Response.file('./report.pdf')
   .attachment('monthly-report.pdf')
+  .header('Cache-Control', 'private, max-age=3600')
 ```
 
-#### merge() - 合并响应对象
+### 流响应
 
 ```typescript
-merge(...responses: Response[]): Response
+import { Readable } from 'stream'
+
+const stream = Readable.from(['Hello', ' ', 'World'])
+Response.stream(stream)
 ```
 
-**重要注意事项：**
-
-合并时，后面的 `body` 会覆盖前面的 `body`：
+### 重定向响应
 
 ```typescript
-// 错误：text body 会被 empty body 覆盖
-const result = Response.text('Hello').merge(Response.cookie('token', '123'))
-// 结果：只有 cookie，没有 text 内容
+Response.redirect('/login')
+Response.redirect('https://example.com')
+Response.redirect('/path', { usePrefix: false })  // 不使用路由前缀
 
-// 正确：使用链式调用
-const result = Response.text('Hello').cookie('token', '123')
-
-// 正确：body 放在最后合并
-const result = Response.merge(
-  Response.cookie('token', '123'),
-  Response.text('Hello')  // body 最后设置
-)
+// 在嵌套路由中 - usePrefix 行为
+const apiRouter = app.route('/api')
+apiRouter.use(() => {
+  return Response.redirect('/users')           // 重定向到 /api/users
+})
+apiRouter.use(() => {
+  return Response.redirect('/users', { usePrefix: false })  // 重定向到 /users
+})
 ```
 
-## Router - 路由系统
-
-### Router() - 创建路由器
+### 空响应
 
 ```typescript
-function Router(): RouterPipeline
+Response.status(204).empty()
 ```
 
-**示例：**
+### 自定义响应
+
+创建用于直接 Node.js 响应操作的自定义响应。
+
+```typescript
+Response.custom(({ req, res, requestInfo, responseInfo }) => {
+  // req: IncomingMessage - Node.js 请求对象
+  // res: ServerResponse - Node.js 响应对象
+  // requestInfo: RequestInfo - Farrow 请求信息
+  // responseInfo: Omit<ResponseInfo, "body"> - 不含 body 的 Farrow 响应信息
+  
+  res.statusCode = 200
+  res.setHeader('Content-Type', 'application/octet-stream')
+  res.end(Buffer.from('binary data'))
+})
+
+// 服务器推送事件（SSE）示例
+Response.custom(({ req, res }) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  })
+  
+  const sendEvent = (data: any) => {
+    res.write(`data: ${JSON.stringify(data)}
+
+`)
+  }
+  
+  sendEvent({ message: '已连接' })
+  
+  const interval = setInterval(() => {
+    sendEvent({ timestamp: Date.now() })
+  }, 1000)
+  
+  req.on('close', () => clearInterval(interval))
+})
+```
+
+### 响应方法（可链式调用）
+
+```typescript
+// 状态和标头
+Response.status(code: number, message?: string): Response
+Response.header(name: string, value: string): Response
+Response.headers(object: Record<string, string>): Response
+Response.type(contentType: string): Response
+Response.vary(field: string): Response
+
+// Cookies
+Response.cookie(name: string, value: string, options?: CookieOptions): Response
+Response.cookies(object: Record<string, string>, options?: CookieOptions): Response
+
+// 支持 Unicode 的附件
+Response.attachment(filename?: string, options?: AttachmentOptions): Response
+
+type AttachmentOptions = {
+  type?: 'attachment' | 'inline'  // 附件类型
+  fallback?: string              // 后备文件名
+}
+
+type CookieOptions = {
+  domain?: string                           // Cookie 域
+  encode?: (val: string) => string         // 编码函数
+  expires?: Date                           // 过期时间
+  httpOnly?: boolean                       // 仅 HTTP 访问
+  maxAge?: number                          // 最大生存时间（毫秒）
+  path?: string                            // Cookie 路径
+  priority?: 'low' | 'medium' | 'high'     // 优先级
+  sameSite?: boolean | 'lax' | 'strict' | 'none'  // SameSite 策略
+  secure?: boolean                         // 需要 HTTPS
+  signed?: boolean                         // 签名 cookie
+}
+
+type FileBodyOptions = {
+  flags?: string                    // 文件打开标志
+  encoding?: BufferEncoding         // 字符编码
+  fd?: number                      // 文件描述符
+  mode?: number                    // 文件模式
+  autoClose?: boolean              // 自动关闭
+  emitClose?: boolean              // 触发关闭事件
+  start?: number                   // 读取起始位置
+  end?: number                     // 读取结束位置
+  highWaterMark?: number           // 缓冲区大小
+}
+
+// 文件附件示例
+Response.file('./document.pdf').attachment('monthly-report.pdf')
+
+// 中文文件名带后备
+Response.file('./数据报告.xlsx').attachment('数据报告.xlsx', {
+  fallback: 'data-report.xlsx'  // 兼容旧浏览器
+})
+
+// 内联显示（在浏览器中打开而非下载）
+Response.file('./document.pdf').attachment('document.pdf', {
+  type: 'inline'
+})
+```
+
+### 响应类型检查
+
+```typescript
+// Response.is() 检查响应内容类型
+const response = Response.json({ data: 'test' })
+response.is('json')        // 返回：'json'
+response.is('html')        // 返回：false
+response.is('json', 'xml') // 返回：'json'（第一个匹配）
+
+const htmlResponse = Response.html('<h1>Hello</h1>')
+htmlResponse.is('html')    // 返回：'html'
+htmlResponse.is('text', 'html') // 返回匹配的类型或 false
+```
+
+### 响应合并
+
+```typescript
+// 重要：Response.merge 遵循"后者覆盖前者"原则
+// Response = createResponse(empty()) 默认情况下
+
+// ✅ 正确：空主体 + JSON 主体 = JSON 主体
+const baseResponse = Response.headers({
+  'X-API-Version': 'v1',
+  'X-Request-ID': requestId
+})  // 保持空主体
+
+const dataResponse = Response.json({ users: [] })
+return baseResponse.merge(dataResponse)
+// 结果：有 JSON 主体和所有标头
+
+// ⚠️ 错误顺序：JSON 主体被空主体覆盖
+const result = Response.json({ users: [] }).merge(Response.header('X-Version', 'v1'))
+// 结果：只有空主体和标头，JSON 数据丢失！
+
+// ✅ 正确顺序：空主体被 JSON 主体覆盖
+const result = Response.header('X-Version', 'v1').merge(Response.json({ users: [] }))
+// 结果：有 JSON 主体和标头
+
+// ✅ 最佳实践：使用链式调用避免合并问题
+const result = Response.json({ users: [] }).header('X-Version', 'v1')
+// 结果：有 JSON 主体和标头，无需担心顺序
+```
+
+**重要提示**：使用 `merge()` 时，最后一个响应的主体会**完全覆盖**之前的主体。对于主体 + 标头/cookies，请始终使用链式调用，或确保主体是合并中的最后一项。
+
+---
+
+## 路由器系统
+
+路由器提供模块化路由管理，支持组合和嵌套。
+
+### `Router(): RouterPipeline`
+
+创建独立的路由器实例。
 
 ```typescript
 import { Router } from 'farrow-http'
 
 const userRouter = Router()
 const apiRouter = Router()
+
+// 路由器可以独立使用
+userRouter.get('/profile').use(() => Response.json({ user: 'profile' }))
+userRouter.post('/update').use(() => Response.json({ success: true }))
+
+// 将路由器挂载到应用程序
+app.use(userRouter)
+app.route('/api').use(apiRouter)
 ```
 
-### RouterPipeline 方法
+### 路由器方法
 
-#### route() - 创建子路由
+#### `route(name: string): Pipeline<RequestInfo, MaybeAsyncResponse>`
+
+创建支持无限嵌套的子路由。
 
 ```typescript
-route(name: string): Pipeline<RequestInfo, MaybeAsyncResponse>
+const app = Http({ basenames: ['/api'] })
+
+// 创建嵌套路由
+const v1Router = app.route('/v1')        // 路径前缀：/api/v1
+const userRouter = v1Router.route('/users')  // 路径前缀：/api/v1/users
+const adminRouter = userRouter.route('/admin') // 路径前缀：/api/v1/users/admin
+
+// 每个路由器都有完整功能
+userRouter.get('/').use(() => Response.json(users))           // GET /api/v1/users
+userRouter.get('/<id:int>').use(() => Response.json(user))   // GET /api/v1/users/123
+adminRouter.get('/stats').use(() => Response.json(stats))    // GET /api/v1/users/admin/stats
+
+// 路由器可以有自己的中间件
+userRouter.use(authMiddleware)
+adminRouter.use(adminMiddleware)
 ```
 
-**示例：**
+#### `serve(name: string, dirname: string): void`
+
+提供带有内置安全保护的静态文件服务。
 
 ```typescript
-const app = Http()
-const apiRouter = app.route('/api')
-const v1Router = apiRouter.route('/v1')
-
-v1Router.get('/users').use(() => Response.json(users))
-// 实际路径: /api/v1/users
-```
-
-#### serve() - 静态文件服务
-
-提供静态文件服务，自动处理目录遍历攻击防护，并支持 index.html 文件。
-
-```typescript
-serve(name: string, dirname: string): void
-```
-
-**特性：**
-- 自动防止目录遍历攻击（路径规范化检查）
-- 目录访问时自动查找 index.html
-- 文件不存在时正确传递给下一个中间件
-
-**示例：**
-
-```typescript
+// 基本静态文件服务
 app.serve('/static', './public')
 app.serve('/uploads', './storage/uploads')
 
-// 访问 /static/style.css 会返回 ./public/style.css
-// 访问 /static/docs/ 会尝试返回 ./public/docs/index.html
+// 内置安全特性：
+// - 自动防止目录遍历攻击（路径规范化）
+// - 自动文件权限检查（使用 fs.stat 验证访问权限）
+// - 为目录请求提供 index.html（例如：/static/ → ./public/index.html）
+// - 如果文件未找到或不可访问，优雅地传递给下一个中间件
+// - 跨所有平台的安全路径处理
+
+// 示例：
+// /static/style.css → ./public/style.css
+// /static/ → ./public/index.html（如果存在）
+// /static/docs/ → ./public/docs/index.html（如果存在）
+// /uploads/../secret → 被阻止（目录遍历防护）
 ```
 
-#### capture() - 捕获响应体
+---
+
+## 中间件
+
+中间件使用洋葱执行模型，必须返回 Response 对象。
+
+### 中间件执行模型
+
+中间件遵循洋葱模型，每个中间件可以在请求处理前后执行代码：
 
 ```typescript
-capture<T extends keyof BodyMap>(type: T, callback: (body: BodyMap[T]) => MaybeAsyncResponse): void
-```
-
-**示例：**
-
-```typescript
-// 捕获所有 JSON 响应并添加时间戳
-app.capture('json', (body) => {
-  return Response.json({
-    ...body.value,
-    timestamp: Date.now()
-  })
-})
-```
-
-## 路由匹配
-
-### HTTP 方法快捷方式
-
-支持所有标准 HTTP 方法，并支持 Template Literal Types 的 URL 模式，提供自动类型推导和运行时验证。
-
-```typescript
-get(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-post(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-put(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-patch(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-delete(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-head(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-options(url: string, schema?: RouterSharedSchema, options?: MatchOptions)
-```
-
-**示例：**
-
-```typescript
-// GET 请求
-app.get('/users').use(() => Response.json(users))
-
-// 带参数的路由
-app.get('/users/<id:int>').use((request) => {
-  return Response.json({ userId: request.params.id })
+app.use((req, next) => {
+  console.log('1: 进入')
+  const result = next(req)  // 调用下一个中间件
+  console.log('4: 退出')
+  return result
 })
 
-// 带查询参数
-app.get('/search?<q:string>&<limit?:int>').use((request) => {
-  const { q, limit = 10 } = request.query
-  return Response.json(search(q, limit))
+app.use((req, next) => {
+  console.log('2: 进入')
+  const result = next(req)
+  console.log('3: 退出')
+  return result
 })
 
-// 带额外验证
-app.post('/users', {
-  body: CreateUserSchema,
-  headers: { 'content-type': Literal('application/json') }
-}).use((request) => {
-  return Response.status(201).json(createUser(request.body))
-})
+// 执行顺序：1 -> 2 -> 3 -> 4
 ```
 
-### URL Schema 语法
+**重要原则：**
+- 中间件**必须返回 Response 对象**
+- 调用 `next(req)` 继续到后续中间件
+- 不调用 `next()` 会中断执行链
+- 支持同步和异步中间件混合使用
 
-URL Schema 基于 farrow-schema，提供自动类型推导和运行时验证。
+### 嵌套路由器中的中间件执行顺序
 
-#### 路径参数
+嵌套路由器中的中间件按照定义顺序依次执行：
 
 ```typescript
-// 基本类型（自动验证）
-'<name:string>'     // string 类型，自动验证
-'<id:int>'          // number 类型（整数），自动验证为整数
-'<price:float>'     // number 类型（浮点数），自动验证为数字
-'<id:number>'       // number 类型，自动验证为数字
-'<active:boolean>'  // boolean 类型，自动验证为布尔值
-'<userId:id>'       // string 类型（非空验证），自动验证非空
+// 父路由器的中间件会被子路由器继承
+const apiRouter = app.route('/api')
+apiRouter.use(corsMiddleware)     // 所有 API 路由都有 CORS
+apiRouter.use(rateLimitMiddleware) // 所有 API 路由都有限流
 
-// 修饰符
-'<name?:string>'    // 可选参数 (string | undefined)
-'<tags+:string>'    // 一个或多个 (string[])
-'<cats*:string>'    // 零个或多个 (string[] | undefined)
+const v1Router = apiRouter.route('/v1')
+v1Router.use(authMiddleware)      // v1 路由需要认证
 
-// 联合类型
-'<type:product|service>'  // 'product' | 'service'
-'<id:int|string>'         // number | string
+const userRouter = v1Router.route('/users')
+userRouter.use(userValidationMiddleware)     // 用户路由有额外验证
 
-// 字面量类型
-'<status:{active}|{inactive}>'  // 'active' | 'inactive'
+// 请求 /api/v1/users 会依次经过：
+// 1. corsMiddleware
+// 2. rateLimitMiddleware  
+// 3. authMiddleware
+// 4. userValidationMiddleware
+// 5. 最终处理函数
 ```
 
-#### 查询参数
+### 基本中间件
 
 ```typescript
-// 在 ? 后面定义查询参数
-'/search?<q:string>'              // 必需查询参数
-'/search?<q:string>&<page?:int>'  // 可选查询参数
-'/items?sort=name&<order:{asc}|{desc}>'  // 混合静态和动态参数
-```
-
-### match() - 详细路由匹配
-
-```typescript
-match<T extends RouterSchema>(schema: T, options?: MatchOptions)
-
-type RouterRequestSchema = {
-  pathname: string                    // 路径模式
-  method?: string | string[]          // HTTP 方法
-  params?: RouterSchemaDescriptor     // 路径参数验证
-  query?: RouterSchemaDescriptor      // 查询参数验证
-  body?: Schema.FieldDescriptor       // 请求体验证
-  headers?: RouterSchemaDescriptor    // 请求头验证
-  cookies?: RouterSchemaDescriptor    // Cookie 验证
-}
-
-type RouterUrlSchema = {
-  url: string                         // URL 模式（支持 Template Literal Types）
-  method?: string | string[]          // HTTP 方法
-  body?: Schema.FieldDescriptor       // 请求体验证
-  headers?: RouterSchemaDescriptor    // 请求头验证
-  cookies?: RouterSchemaDescriptor    // Cookie 验证
-}
-
-type MatchOptions = {
-  block?: boolean                     // 是否阻塞未匹配的请求
-  onSchemaError?(                     // 验证错误处理函数
-    error: ValidationError,
-    input: RequestInfo,
-    next: Next
-  ): MaybeAsyncResponse | void
-}
-```
-
-#### ValidationError 详细结构
-
-验证错误对象包含详细的错误信息：
-
-```typescript
-interface ValidationError {
-  message: string                     // 错误描述信息
-  path?: (string | number)[]          // 错误字段路径（如 ['body', 'name']）
-  value?: any                         // 导致错误的值
-  schema?: any                        // 相关的 Schema 定义
-}
-```
-
-**示例：**
-
-```typescript
-app.post('/users', {
-  body: { 
-    name: String, 
-    age: Number,
-    profile: {
-      email: String
+// 路由特定中间件
+http.get('/protected')
+  .use(async (req, next) => {
+    const token = req.headers.authorization
+    if (!token) {
+      return Response.status(401).json({ error: '未授权' })
     }
-  }
-}, {
-  onSchemaError: (error, input, next) => {
-    console.log('错误字段路径:', error.path)     // ['body', 'profile', 'email']
-    console.log('用户输入值:', error.value)      // 用户实际输入的值
-    console.log('错误描述:', error.message)      // 详细错误信息
-    
-    // 返回用户友好的错误信息
-    return Response.status(400).json({
-      error: '数据验证失败',
-      field: error.path?.join('.'),           // 'body.profile.email'
-      message: error.message,
-      received: error.value,
-      hint: '请检查输入格式是否正确'
-    })
-  }
-}).use((request) => {
-  // request.body 已经过验证且类型安全
-  return Response.status(201).json(createUser(request.body))
-})
+    return next(req)
+  })
+  .use((req) => {
+    return Response.json({ message: '受保护的内容' })
+  })
 ```
 
-## 中间件系统
-
-### 中间件类型定义
+### 全局中间件
 
 ```typescript
-type Middleware<I, O> = (input: I, next: Next<I, O>) => O
-type Next<I, O> = (input?: I) => O
-type HttpMiddleware = Middleware<RequestInfo, MaybeAsyncResponse>
-type MaybeAsyncResponse = Response | Promise<Response>
-```
-
-**重要：** 中间件必须返回 Response 对象，这是 farrow-http 的核心设计原则之一。
-
-### use() - 添加中间件
-
-```typescript
-use(middleware: HttpMiddleware): void
-```
-
-**示例：**
-
-```typescript
-// 日志中间件
-app.use((request, next) => {
-  console.log(`${request.method} ${request.pathname}`)
-  return next(request)
-})
-
-// 认证中间件
-app.use((request, next) => {
-  const token = request.headers?.authorization
-  
-  if (!isValidToken(token)) {
-    return Response.status(401).json({ error: 'Unauthorized' })
-  }
-  
-  return next(request)
-})
-
-// 错误处理中间件
-app.use((request, next) => {
-  try {
-    return next(request)
-  } catch (error) {
-    console.error(error)
-    return Response.status(500).json({ error: 'Internal Server Error' })
-  }
+// 应用到所有路由
+http.use(async (req, next) => {
+  console.log(`${req.method} ${req.pathname}`)
+  const start = Date.now()
+  const response = await next(req)
+  console.log(`耗时 ${Date.now() - start}ms`)
+  return response
 })
 ```
 
 ### 异步中间件
 
 ```typescript
-// 异步中间件
-app.use(async (request, next) => {
-  const user = await authenticateUser(request)
+app.use(async (req, next) => {
+  const user = await authenticateUser(req)
   UserContext.set(user)
-  return next(request)
+  return next(req)
 })
 
-// 处理 Promise
-app.use((request, next) => {
-  const result = next(request)
-  
-  if (result instanceof Promise) {
-    return result.then(response => {
-      return response.header('X-Processed-At', Date.now().toString())
-    })
-  }
-  
-  return result.header('X-Processed-At', Date.now().toString())
+// 处理异步响应
+app.use(async (req, next) => {
+  const response = await next(req)
+  return response.header('X-Processed-At', Date.now().toString())
 })
 ```
 
-## Context Hooks
-
-farrow-http 使用 farrow-pipeline 的 Context 系统。
-
-### useRequest() / useResponse()
-
-获取 Node.js 原始请求/响应对象（可能为 null）。
-
-```typescript
-function useRequest(): IncomingMessage | null
-function useResponse(): ServerResponse | null
-```
-
-**示例：**
-
-```typescript
-app.use(() => {
-  const req = useRequest()
-  const res = useResponse()
-  
-  if (req && res) {
-    console.log(req.method, req.url)
-    res.setHeader('X-Custom', 'value')
-  }
-  
-  return Response.text('OK')
-})
-```
-
-### useReq() / useRes()
-
-获取 Node.js 原始请求/响应对象。如果对象不存在会抛出错误。
-
-```typescript
-function useReq(): IncomingMessage
-function useRes(): ServerResponse
-```
-
-### useRequestInfo()
-
-获取当前请求信息。
-
-```typescript
-function useRequestInfo(): RequestInfo
-```
-
-**示例：**
-
-```typescript
-app.use(() => {
-  const request = useRequestInfo()
-  
-  console.log({
-    pathname: request.pathname,
-    method: request.method,
-    query: request.query
-  })
-  
-  return Response.text('OK')
-})
-```
-
-### useBasenames() / usePrefix()
-
-获取当前路由的基础路径和完整前缀。
-
-```typescript
-function useBasenames(): string[]
-function usePrefix(): string
-```
-
-**示例：**
-
-```typescript
-const app = Http({ basenames: ['/api'] })
-const v1Router = app.route('/v1')
-const userRouter = v1Router.route('/users')
-
-userRouter.get('/').use(() => {
-  const basenames = useBasenames()
-  // ['/api', '/v1', '/users']
-  
-  const prefix = usePrefix()
-  // '/api/v1'
-  
-  return Response.json({ basenames, prefix })
-})
-```
-
-## 错误处理
-
-### HttpError 类
-
-```typescript
-class HttpError extends Error {
-  constructor(message: string, public statusCode: number = 500)
-  statusCode: number
-}
-```
-
-**示例：**
+### 错误处理中间件
 
 ```typescript
 import { HttpError } from 'farrow-http'
 
-app.use((request, next) => {
-  if (!isValidRequest(request)) {
-    throw new HttpError('Bad Request', 400)
-  }
-  
-  return next(request)
+// 抛出 HTTP 错误
+http.get('/error', () => {
+  throw new HttpError('资源未找到', 404)
 })
 
-// 自定义错误
-class AuthenticationError extends HttpError {
-  constructor(message = 'Authentication required') {
-    super(message, 401)
+// 全局错误处理器
+http.use(async (req, next) => {
+  try {
+    return await next(req)
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return Response.status(error.statusCode).json({
+        error: error.message 
+      })
+    }
+    return Response.status(500).json({
+      error: '内部服务器错误'
+    })
   }
-}
-
-app.use((request, next) => {
-  if (!isAuthenticated(request)) {
-    throw new AuthenticationError()
-  }
-  
-  return next(request)
 })
 ```
 
-## 类型定义
+### 中间件类型
 
-### 核心类型
+中间件函数的 TypeScript 类型定义：
 
-#### RequestInfo
+```typescript
+type HttpMiddleware = (
+  request: RequestInfo, 
+  next: Next<RequestInfo, MaybeAsyncResponse>
+) => MaybeAsyncResponse
+
+type Next<I, O> = (input?: I) => O
+type MaybeAsyncResponse = Response | Promise<Response>
+```
+
+---
+
+## 上下文管理
+
+**上下文隔离**：farrow-http 自动启用 Node.js 异步钩子（AsyncLocalStorage）来提供请求级隔离。每个 HTTP 请求在自己的容器中运行，确保上下文值永远不会在请求之间泄露。
+
+```typescript
+import { createContext } from 'farrow-pipeline'
+import { Http, Response } from 'farrow-http'
+
+// createContext<T>(defaultValue: T): Context<T>
+// 创建一个新的上下文实例，类型安全且请求隔离
+
+// 定义带默认值的上下文
+const AuthContext = createContext<{ userId: string } | null>(null)
+const DBContext = createContext<any | null>(null)
+const RequestIdContext = createContext<string>('')
+
+// Context<T> 接口方法
+type Context<T> = {
+  get(): T                    // 获取当前值
+  set(value: T): void         // 设置新值  
+  assert(): NonNullable<T>    // 断言非空并返回值（抛出异常如果为空）
+  create(value: T): Context<T> // 创建具有不同默认值的新上下文实例
+}
+
+// 在中间件中设置上下文
+app.use((req, next) => {
+  const userId = extractUserFromToken(req.headers.authorization)
+  const requestId = generateRequestId()
+  
+  AuthContext.set({ userId })
+  RequestIdContext.set(requestId)
+  
+  return next(req)
+})
+
+// 在处理器中使用上下文
+app.get('/profile').use(() => {
+  const auth = AuthContext.get()          // { userId: string } | null
+  const requestId = RequestIdContext.get() // string
+  const db = DBContext.get()              // any | null
+  
+  if (!auth) {
+    return Response.status(401).json({ error: '未授权' })
+  }
+  
+  // Context.assert() 如果为空会抛出异常，返回非空值
+  try {
+    const safeAuth = AuthContext.assert()  // { userId: string }（永不为空）
+    const user = db?.query('SELECT * FROM users WHERE id = ?', [safeAuth.userId])
+    return Response.json(user)
+  } catch {
+    return Response.status(401).json({ error: '未认证' })
+  }
+})
+
+// 上下文隔离示例 - 每个请求都有独立的上下文
+app.get('/test').use(() => {
+  RequestIdContext.set('unique-per-request')
+  const id = RequestIdContext.get() // 每个并发请求都不同
+  return Response.json({ requestId: id })
+})
+```
+
+### 上下文钩子
+
+上下文钩子在异步环境中安全传递上下文信息。
+
+#### `useRequestInfo()`
+获取当前请求信息。
+
+```typescript
+app.use(() => {
+  const req = useRequestInfo()
+  console.log({
+    pathname: req.pathname,
+    method: req.method,
+    query: req.query,
+    params: req.params,
+    headers: req.headers,
+    cookies: req.cookies,
+  })
+  
+  return Response.json({ ok: true })
+})
+```
+
+#### `useBasenames()`
+获取当前路由的基础路径列表。
+
+```typescript
+const app = Http({ basenames: ['/api'] })
+const v1Router = app.route('/v1')
+
+v1Router.use(() => {
+  const basenames = useBasenames() // ['/api', '/v1']
+  return Response.json({ basenames })
+})
+```
+
+#### `usePrefix()`
+获取完整的路径前缀。
+
+```typescript
+const userRouter = Router()
+userRouter.get('/').use(() => {
+  const basenames = useBasenames()
+  // 如果挂载在 /api/v1/users，basenames = ['/api', '/v1', '/users']
+  return Response.json({ basenames })
+})
+
+http.route('/api').route('/v1').route('/users').use(userRouter)
+
+// 获取当前路由前缀
+http.route('/api').route('/v1').get('/status').use(() => {
+  const prefix = usePrefix()
+  // prefix = '/api/v1'（组合的 basenames 作为单个字符串）
+  return Response.json({
+    prefix,
+    endpoint: `${prefix}/status`
+  })
+})
+```
+
+#### 原始对象访问
+```typescript
+import { useRequest, useResponse, useReq, useRes, useRequestInfo, useBasenames, usePrefix } from 'farrow-http'
+
+// 获取 Node.js 原始请求/响应（可为空）
+http.use(() => {
+  const req = useRequest()  // IncomingMessage | null
+  const res = useResponse() // ServerResponse | null
+  
+  if (req && res) {
+    console.log(req.method, req.url)
+    // 直接操作（不推荐）
+  }
+  
+  return Response.json({ ok: true })
+})
+
+// 获取 Node.js 原始请求/响应（如果为空则抛出异常）
+http.use(() => {
+  const req = useReq()  // IncomingMessage（如果为空则抛出异常）
+  const res = useRes()  // ServerResponse（如果为空则抛出异常）
+  
+  // 保证存在
+  console.log(req.headers)
+  
+  return Response.json({ ok: true })
+})
+```
+
+### RequestInfo
+
+包含所有解析后请求数据的请求信息对象：
 
 ```typescript
 type RequestInfo = {
-  readonly pathname: string
-  readonly method?: string
-  readonly query?: RequestQuery
-  readonly body?: any
-  readonly headers?: RequestHeaders
-  readonly cookies?: RequestCookies
+  readonly pathname: string         // 路径名
+  readonly method?: string          // HTTP 方法
+  readonly query?: RequestQuery     // 查询参数
+  readonly body?: any              // 请求体
+  readonly headers?: RequestHeaders // 请求标头
+  readonly cookies?: RequestCookies // Cookies
 }
 
 type RequestQuery = { readonly [key: string]: any }
@@ -867,234 +1193,422 @@ type RequestHeaders = { readonly [key: string]: any }
 type RequestCookies = { readonly [key: string]: any }
 ```
 
-#### ResponseInfo
+---
+
+## 错误处理
+
+### HttpError 类
+
+内置的带状态码信息的 HTTP 错误类。
 
 ```typescript
-type ResponseInfo = {
-  status?: Status
-  headers?: Headers
-  cookies?: Cookies
-  body?: Body
-  vary?: string[]
+import { HttpError } from 'farrow-http'
+
+// 抛出 HTTP 错误
+app.use((req, next) => {
+  if (!isValidRequest(req)) {
+    throw new HttpError('错误请求', 400)
+  }
+  return next(req)
+})
+
+// 自定义错误类
+class AuthenticationError extends HttpError {
+  constructor(message = '需要认证') {
+    super(message, 401)
+  }
 }
 
-type Status = {
-  code: number
-  message?: string
-}
-
-type Headers = { [key: string]: Value }
-type Value = string | number
-
-type Cookies = {
-  [key: string]: {
-    value: Value | null
-    options?: CookieOptions
+// 自定义错误类型
+class ValidationError extends HttpError {
+  constructor(message: string, field?: string) {
+    super(message, 400)
+    this.name = 'ValidationError'
+    this.field = field
   }
 }
 ```
 
-#### Body Types
+### 自动错误处理
+
+框架自动捕获中间件中的错误：
 
 ```typescript
-type Body = 
-  | EmptyBody 
-  | StringBody 
-  | JsonBody 
-  | StreamBody 
-  | BufferBody 
-  | FileBody 
-  | CustomBody 
-  | RedirectBody
+// 同步错误
+app.use(() => {
+  throw new Error('出了问题')
+  // 自动转换为 500 响应
+})
 
-type EmptyBody = { type: 'empty'; value: null }
-type StringBody = { type: 'string'; value: string }
-type JsonBody = { type: 'json'; value: JsonType }
-type StreamBody = { type: 'stream'; value: Stream }
-type BufferBody = { type: 'buffer'; value: Buffer }
-type RedirectBody = { type: 'redirect'; value: string; usePrefix: boolean }
-type FileBody = { type: 'file'; value: string; options?: FileBodyOptions }
-type CustomBody = { type: 'custom'; handler: CustomBodyHandler }
+// 异步错误
+app.use(async () => {
+  const data = await fetchExternalAPI()
+  return Response.json(data)
+  // Promise 异常会被自动捕获
+})
 ```
 
-### 工具类型
-
-#### TypeOfRequestSchema
+### 全局错误处理器
 
 ```typescript
-// 从 RouterRequestSchema 提取 TypeScript 类型
-type TypeOfRequestSchema<T extends RouterRequestSchema> = {
-  readonly [K in keyof T]: TypeOfRouterRequestField<T[K]>
-}
+// 全局错误处理器
+http.use(async (req, next) => {
+  try {
+    return await next(req)
+  } catch (error) {
+    console.error('请求失败:', {
+      method: req.method,
+      url: req.pathname,
+      error: error.message
+    })
+
+    if (error instanceof ValidationError) {
+      return Response.status(error.statusCode).json({
+        error: error.message,
+        field: error.field,
+        type: 'validation_error'
+      })
+    }
+    
+    if (error instanceof HttpError) {
+      return Response.status(error.statusCode).json({
+        error: error.message,
+        type: 'http_error'
+      })
+    }
+    
+    return Response.status(500).json({
+      error: '内部服务器错误',
+      type: 'server_error'
+    })
+  }
+})
 ```
 
-#### TypeOfUrlSchema
+### 错误堆栈控制
 
 ```typescript
-// 从 RouterUrlSchema 提取 TypeScript 类型
-type TypeOfUrlSchema<T extends RouterUrlSchema> = ParseUrl<T['url']> & {
-  readonly [K in keyof Omit<T, 'url'>]: TypeOfRouterRequestField<Omit<T, 'url'>[K]>
-}
+const app = Http({
+  errorStack: process.env.NODE_ENV === 'development'   // 在开发环境显示完整堆栈
+})
 ```
 
-### 常用接口
+---
 
-#### CookieOptions
+## 静态文件
 
 ```typescript
-interface CookieOptions {
-  domain?: string
-  encode?: (val: string) => string
-  expires?: Date
-  httpOnly?: boolean
-  maxAge?: number
-  path?: string
-  priority?: 'low' | 'medium' | 'high'
-  sameSite?: boolean | 'lax' | 'strict' | 'none'
-  secure?: boolean
-  signed?: boolean
-}
+// 提供带内置安全保护的静态文件
+http.serve('/static', './public')
+http.serve('/uploads', './storage/uploads')
+
+// 内置安全特性：
+// - 自动防止目录遍历攻击（路径规范化）
+// - 自动文件权限检查（使用 fs.stat 验证访问权限）
+// - 为目录请求提供 index.html（例如：/static/ → ./public/index.html）
+// - 如果文件未找到或不可访问，优雅地传递给下一个中间件
+// - 跨所有平台的安全路径处理
+
+// 示例：
+// /static/style.css → ./public/style.css
+// /static/ → ./public/index.html（如果存在）
+// /static/docs/ → ./public/docs/index.html（如果存在）
+// /uploads/../secret → 被阻止（目录遍历防护）
 ```
+
+---
+
+## 响应拦截
+
+### 捕获和转换响应
+
+```typescript
+// 全局捕获和转换 JSON 响应
+http.capture('json', (jsonBody) => {
+  // jsonBody 类型：{ type: 'json', value: JsonType }
+  return Response.json({
+    data: jsonBody.value,
+    timestamp: new Date().toISOString(),
+    version: 'v1',
+    success: true
+  })
+})
+
+// 捕获文件响应用于日志/分析
+http.capture('file', (fileBody) => {
+  // fileBody 类型：{ type: 'file', value: string, options?: FileBodyOptions }
+  console.log(`文件服务: ${fileBody.value}`)
+  return Response.file(fileBody.value, fileBody.options)
+})
+
+// 所有可捕获的主体类型：
+// 'empty' | 'string' | 'json' | 'stream' | 'buffer' | 'file' | 'custom' | 'redirect'
+```
+
+### `matchBodyType<T extends keyof BodyMap>(type: T, callback: (body: BodyMap[T]) => MaybeAsyncResponse)`
+
+创建中间件来捕获和处理特定响应主体类型。
+
+```typescript
+import { matchBodyType } from 'farrow-http'
+
+// 为所有 JSON 响应添加时间戳和版本信息
+app.use(matchBodyType('json', (body) => {
+  return Response.json({
+    ...body.value,
+    timestamp: Date.now(),
+    version: 'v1'
+  })
+}))
+
+// 为所有文件响应添加缓存标头
+app.use(matchBodyType('file', (body) => {
+  return Response.file(body.value, body.options)
+    .header('Cache-Control', 'public, max-age=3600')
+    .header('X-File-Server', 'farrow-http')
+}))
+
+// 处理字符串响应，添加前缀
+app.use(matchBodyType('string', (body) => {
+  return Response.string(`[${new Date().toISOString()}] ${body.value}`)
+}))
+```
+
+---
+
+## 测试
+
+```typescript
+import { Http } from 'farrow-http'
+import request from 'supertest'
+
+const app = Http()
+app.get('/hello').use(() => Response.json({ message: 'Hello' }))
+
+// 使用 app.server() 创建服务器但不启动它
+// 这对测试至关重要 - 在测试中不要调用 listen()！
+const server = app.server()  // 返回 Node.js http.Server 实例
+
+// 使用 supertest 测试请求
+describe('API 测试', () => {
+  test('GET /hello', async () => {
+    const response = await request(server)
+      .get('/hello')
+      .expect(200)
+    
+    expect(response.body).toEqual({ message: 'Hello' })
+  })
+  
+  test('POST /users', async () => {
+    const response = await request(server)
+      .post('/users')
+      .send({ name: 'Alice', email: 'alice@example.com' })
+      .expect(201)
+    
+    expect(response.body.name).toBe('Alice')
+  })
+  
+  test('受保护的路由', async () => {
+    await request(server)
+      .get('/protected')
+      .set('Authorization', 'Bearer token')
+      .expect(200)
+  })
+})
+```
+---
+
 
 ## 完整示例
 
 ```typescript
-import { Http, Response, Router, HttpError } from 'farrow-http'
-import { ObjectType, String, Number } from 'farrow-schema'
+import { Http, Response, HttpError, Router } from 'farrow-http'
+import { ObjectType, String, Int, Optional } from 'farrow-schema'
 import { createContext } from 'farrow-pipeline'
 
-// Schema
-class User extends ObjectType {
-  id = Number
+// 上下文定义
+const AuthContext = createContext<{ userId: string; role: string } | null>(null)
+
+// Schema 定义
+class CreateUserInput extends ObjectType {
   name = String
   email = String
+  age = Optional(Int)
 }
 
-// Context
-const UserContext = createContext<User | null>(null)
-
-// 中间件
-const authenticate = (request, next) => {
-  const token = request.headers?.authorization
-  if (!token) {
-    return Response.status(401).json({ error: 'Unauthorized' })
-  }
-  
-  const user = verifyToken(token)
-  UserContext.set(user)
-  return next(request)
+class UpdateUserInput extends ObjectType {
+  name = Optional(String)
+  email = Optional(String)
+  age = Optional(Int)
 }
 
-// 创建应用
-const app = Http()
+// 创建应用程序
+const app = Http({
+  basenames: ['/api'],
+  logger: {
+    ignoreIntrospectionRequestOfFarrowApi: true // 推荐，可清理 farrow-api 日志
+  },
+  contexts: () => {
+    // 示例：为每个请求注入上下文
+    // const RequestIdContext = createContext<string>('')
+    // return {
+    //   requestId: RequestIdContext.create(generateId())
+    // }
+    return {}
+  },
+  errorStack: process.env.NODE_ENV === 'development'
+})
 
 // 全局中间件
-app.use((request, next) => {
-  console.log(`${request.method} ${request.pathname}`)
-  return next(request)
+app.use(async (req, next) => {
+  console.log(`${req.method} ${req.pathname}`)
+  const start = Date.now()
+  const response = await next(req)
+  console.log(`耗时 ${Date.now() - start}ms`)
+  return response
 })
 
-// 公开路由
-app.get('/').use(() => {
-  return Response.json({ message: 'Welcome to API' })
-})
-
-// 用户路由
-const userRouter = Router()
-
-userRouter.get('/').use(() => {
-  return Response.json(getAllUsers())
-})
-
-userRouter.get('/<id:int>').use((request) => {
-  const user = getUser(request.params.id)
-  if (!user) {
-    throw new HttpError('User not found', 404)
+// 认证中间件
+const authenticate = async (req: any, next: any) => {
+  const token = req.headers?.authorization?.replace('Bearer ', '')
+  if (!token) {
+    throw new HttpError('需要授权', 401)
   }
-  return Response.json(user)
-})
-
-userRouter.post('/', {
-  body: User
-}).use((request) => {
-  const user = createUser(request.body)
-  return Response
-    .status(201)
-    .json(user)
-    .header('Location', `/api/users/${user.id}`)
-})
-
-// 受保护的路由
-app.use('/api/*', authenticate)
-app.route('/api/users').use(userRouter)
-
-// 错误处理
-app.use((request, next) => {
+  
   try {
-    return next(request)
+    const payload = verifyToken(token)
+    AuthContext.set(payload)
+    return next(req)
+  } catch {
+    throw new HttpError('无效令牌', 401)
+  }
+}
+
+// 基于角色的访问控制
+const requireRole = (role: string) => async (req: any, next: any) => {
+  const auth = AuthContext.get()
+  if (!auth || auth.role !== role) {
+    throw new HttpError('权限不足', 403)
+  }
+  return next(req)
+}
+
+// 全局错误处理器
+app.use(async (req, next) => {
+  try {
+    return await next(req)
   } catch (error) {
+    console.error('请求失败:', {
+      method: req.method,
+      url: req.pathname,
+      error: error.message,
+      stack: error.stack
+    })
+
     if (error instanceof HttpError) {
-      return Response.status(error.status).json({
-        error: error.message
+      return Response.status(error.statusCode).json({
+        error: error.message,
+        type: 'http_error'
       })
     }
+    
     return Response.status(500).json({
-      error: 'Internal server error'
+      error: '内部服务器错误',
+      type: 'server_error'
     })
   }
 })
 
-// 启动服务器
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000')
+// 健康检查
+app.get('/health').use(() => {
+  return Response.json({
+    status: 'ok', 
+    timestamp: Date.now(),
+    version: '1.0.0'
+  })
 })
-```
 
-## 最佳实践
-
-### 1. 结构化路由
-
-```typescript
-// 推荐：模块化路由
-const userRouter = Router()
-const postRouter = Router()
-const adminRouter = Router()
-
-// 明确的路由挂载
-app.route('/api/users').use(userRouter)
-app.route('/api/posts').use(postRouter)
-app.route('/admin').use(adminRouter)
-```
-
-### 2. 安全最佳实践
-
-```typescript
-// 推荐：安全的中间件配置
-app.use((request, next) => {
-  // CORS 头部
-  const response = next(request)
-  return response
-    .header('Access-Control-Allow-Origin', 'https://yourdomain.com')
-    .header('X-Content-Type-Options', 'nosniff')
-    .header('X-Frame-Options', 'DENY')
-    .header('X-XSS-Protection', '1; mode=block')
-})
-```
-
-### 3. 性能优化
-
-```typescript
-// 推荐：响应压缩和缓存
-app.use((request, next) => {
-  const response = next(request)
-  
-  // 设置缓存策略
-  if (request.pathname.startsWith('/static/')) {
-    return response.header('Cache-Control', 'public, max-age=31536000')
+// 用户路由
+app.get('/users/<id:int>').use((req) => {
+  const user = getUserById(req.params.id)
+  if (!user) {
+    throw new HttpError('用户未找到', 404)
   }
-  
-  return response
+  return Response.json(user)
 })
-```
 
-恭喜！您已经掌握了 farrow-http 的完整 API。现在可以构建强大、类型安全的 HTTP 应用了！
+app.post('/users', {
+  body: CreateUserInput
+}, {
+  onSchemaError: (error, input, next) => {
+    return Response.status(400).json({
+      error: '验证失败',
+      field: error.path?.join('.'),
+      message: error.message,
+      received: error.value
+    })
+  }
+}).use(authenticate)
+  .use((req) => {
+    const user = createUser(req.body)
+    return Response.status(201).json(user)
+  })
+
+app.put('/users/<id:int>', {
+  body: UpdateUserInput
+}).use(authenticate)
+  .use((req) => {
+    const userId = req.params.id
+    const auth = AuthContext.assert()
+    
+    // 用户只能更新自己的资料，除非是管理员
+    if (auth.userId !== userId.toString() && auth.role !== 'admin') {
+      throw new HttpError('只能更新自己的资料', 403)
+    }
+    
+    const updatedUser = updateUser(userId, req.body)
+    return Response.json(updatedUser)
+  })
+
+// 静态文件
+app.serve('/static', './public')
+app.serve('/uploads', './storage/uploads')
+
+// 管理员路由器
+const adminRouter = Router()
+adminRouter.use(authenticate)
+adminRouter.use(requireRole('admin'))
+
+adminRouter.get('/dashboard').use(() => {
+  return Response.json({
+    message: '管理员仪表板',
+    stats: getAdminStats()
+  })
+})
+
+adminRouter.delete('/users/<id:int>').use((req) => {
+  deleteUser(req.params.id)
+  return Response.status(204).empty()
+})
+
+app.route('/admin').use(adminRouter)
+
+// 响应转换
+app.capture('json', (body) => {
+  return Response.json({
+    ...body.value,
+    timestamp: new Date().toISOString(),
+    apiVersion: 'v1'
+  })
+})
+
+// 启动服务器
+const port = process.env.PORT || 3000
+app.listen(port, () => {
+  console.log(`服务器运行在 http://localhost:${port}`)
+  console.log(`健康检查: http://localhost:${port}/api/health`)
+})
+
+// 导出用于测试
+export { app }
+```

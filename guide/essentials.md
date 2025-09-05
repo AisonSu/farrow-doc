@@ -470,14 +470,14 @@ app.post('/users', {
 ### 中间件基础
 
 ```typescript
-// farrow-pipeline 的通用中间件签名
-type Middleware<I = unknown, O = unknown> = (input: I, next: Next<I, O>) => O
-type Next<I = unknown, O = unknown> = (input: I) => O
+// farrow-http 中间件的类型定义
+type HttpMiddleware = (
+  request: RequestInfo, 
+  next: Next<RequestInfo, MaybeAsyncResponse>
+) => MaybeAsyncResponse
 
-// farrow-http 的中间件实际上是 AsyncPipeline
-// HTTP 中间件的类型：AsyncPipeline<RequestInfo, Response>
-// 中间件函数签名：(request: RequestInfo, next: Next<RequestInfo, MaybeAsyncResponse>) => MaybeAsyncResponse
-// 其中 MaybeAsyncResponse = Response | Promise<Response>
+type Next<I = unknown, O = unknown> = (input: I) => O
+type MaybeAsyncResponse = Response | Promise<Response>
 
 // 基础中间件示例
 app.use((request, next) => {
@@ -499,11 +499,10 @@ app.use(async (request, next) => {
 #### 日志中间件
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response, MaybeAsyncResponse } from 'farrow-http'
+import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
 
 // 日志中间件 - 需要异步处理以正确计算响应时间
-const logger: Middleware<RequestInfo, MaybeAsyncResponse> = async (request, next) => {
+const logger: HttpMiddleware = async (request, next) => {
   const start = Date.now()
   const { method, pathname } = request
   
@@ -525,13 +524,13 @@ app.use(logger)
 #### 认证中间件
 
 ```typescript
-import { createContext, Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response, MaybeAsyncResponse } from 'farrow-http'
+import { createContext } from 'farrow-pipeline'
+import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
 
 const UserContext = createContext<User | null>(null)
 
 // 认证中间件 - 通常需要异步查询数据库
-const authenticate: Middleware<RequestInfo, MaybeAsyncResponse> = async (request, next) => {
+const authenticate: HttpMiddleware = async (request, next) => {
   const token = request.headers?.authorization?.replace('Bearer ', '')
   
   if (!token) {
@@ -554,14 +553,13 @@ const authenticate: Middleware<RequestInfo, MaybeAsyncResponse> = async (request
 }
 
 // 应用到特定路由
-app.use('/api/*', authenticate)
+app.use('/api/<path*:string>', authenticate)
 ```
 
 #### CORS 中间件
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response } from 'farrow-http'
+import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
 
 interface CorsOptions {
   origin?: string
@@ -571,7 +569,7 @@ interface CorsOptions {
 }
 
 // 返回一个中间件函数
-const cors = (options: CorsOptions = {}): Middleware<RequestInfo, Response> => {
+const cors = (options: CorsOptions = {}): HttpMiddleware => {
   const {
     origin = '*',
     methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -604,11 +602,10 @@ app.use(cors({ origin: 'https://example.com' }))
 #### 限流中间件
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response } from 'farrow-http'
+import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
 
 // 高阶函数，返回配置好的中间件
-const rateLimit = (maxRequests = 100, windowMs = 60000): Middleware<RequestInfo, Response> => {
+const rateLimit = (maxRequests = 100, windowMs = 60000): HttpMiddleware => {
   const requests = new Map<string, number[]>()
   
   return (request, next) => {
@@ -805,39 +802,43 @@ app.get('/login').use(() => {
 由于最初设计遗漏，Response 合并时需要注意顺序：
 
 ```typescript
-// ❌ 避免：将cookie放在merge最后，会被后面cookie自带的empty body覆盖
-Response.text('Hello').merge(Response.cookie('token', '123'))
+// ⚠️ 重要：Response.merge 遵循"后者覆盖前者"原则
 
-// ✅ 推荐：链式调用或者 body 放最后
+// ❌ 错误：将有body的响应放前面，会被空body覆盖
+Response.text('Hello').merge(Response.cookie('token', '123'))
+// 结果：只有cookie，文本内容丢失！
+
+// ✅ 正确：链式调用
 Response.text('Hello').cookie('token', '123')
-// 或者
-Response.merge(Response.cookie('token', '123'), Response.text('Hello'))
+
+// ✅ 正确：空响应在前，有body的响应在后
+Response.cookie('token', '123').merge(Response.text('Hello'))
 ```
 
 ```typescript
 // Response.merge 的基本用法
 app.get('/api/data').use(() => {
-  const dataResponse = Response.json({ data: 'value' })
   const headersResponse = Response
     .header('X-Custom', 'value')
     .header('X-Request-ID', generateId())
+  const dataResponse = Response.json({ data: 'value' })
   
-  // 合并两个响应 - 保留 body，添加 headers
-  return Response.merge(dataResponse, headersResponse)
+  // 正确：headers响应(空body)在前，data响应(有body)在后
+  return headersResponse.merge(dataResponse)
 })
 
 // 在中间件中使用 Response.merge
 const addSecurityHeaders = (request, next) => {
   const response = next(request)
   
-  // 创建包含安全头的响应
+  // 创建包含安全头的响应（空body）
   const securityHeaders = Response
     .header('X-Content-Type-Options', 'nosniff')
     .header('X-Frame-Options', 'DENY')
     .header('X-XSS-Protection', '1; mode=block')
   
-  // 合并原响应和安全头
-  return Response.merge(response, securityHeaders)
+  // 正确：安全头(空body)在前，原响应在后
+  return securityHeaders.merge(response)
 }
 
 // 条件性合并响应
@@ -848,7 +849,7 @@ app.get('/api/profile').use((request) => {
   // 根据条件添加额外的响应属性
   if (user.isAdmin) {
     const adminHeaders = Response.header('X-Admin-Access', 'true')
-    return Response.merge(baseResponse, adminHeaders)
+    return adminHeaders.merge(baseResponse)  // 正确：空body在前
   }
   
   return baseResponse
@@ -863,8 +864,8 @@ app.get('/api/resource').use(() => {
     .header('X-Resource-ID', '123')
   const cookies = Response.cookie('lastResourceId', '123')
   
-  // 合并所有响应属性
-  return Response.merge(data, status, headers, cookies)
+  // 正确：将有body的响应放在最后
+  return Response.merge(status, headers, cookies, data)
 })
 ```
 
@@ -1112,12 +1113,12 @@ app.post('/posts').use((request) => {
 ### 全局错误处理
 
 ```typescript
-// 错误处理中间件（放在最前面）
-app.use((request, next) => {
+// 错误处理中间件（放在最前面） - 统一使用 async/await
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
-    // 处理同步错误
+    // 处理所有错误（同步和异步）
     return handleError(error)
   }
 })
@@ -1180,7 +1181,7 @@ function handleError(error: unknown): Response {
 ```typescript
 // 全局 Schema 错误处理
 app.match({
-  url: '/*',
+  url: '/<path*:string>',
   onSchemaError: (error, input, next) => {
     const field = error.path?.join('.')
     
@@ -1528,9 +1529,9 @@ app.route('/api/posts').use(postsRouter)
 app.route('/api').use(commentsRouter)
 
 // 错误处理
-app.use((request, next) => {
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
     if (error instanceof HttpError) {
       return Response.status(error.status).json({

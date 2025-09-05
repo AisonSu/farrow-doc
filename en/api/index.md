@@ -5,73 +5,86 @@ Farrow provides a complete API for building type-safe Web applications. This doc
 ## Core Modules
 
 ### [farrow-http](/en/api/farrow-http)
-**HTTP server and routing system** - Build type-safe Web applications
+**TypeScript-first Web framework** - Provides type-safe routing and automatic validation
 
-- HTTP application and HTTPS support
-- Powerful routing system and URL Schema syntax
-- Response builder and custom responses
-- Middleware system and error handling
-- Context Hooks and request processing
+- HTTP/HTTPS server creation and configuration
+- Type-safe routing patterns and automatic validation
+- Powerful Response construction system
+- Modular router and middleware system
+- Context management and error handling
+- Static file serving and CORS integration
+- Express integration support
 
 ### [farrow-schema](/en/api/farrow-schema)
-**Schema definition and validation system** - Runtime type validation and inference
+**Powerful type validation and serialization library** - Easily handle data through type-driven design
 
-- Rich basic types (String, Int, Boolean, Date, etc.)
-- Composite types (ObjectType, List, Union, Tuple, etc.)
-- Type modifiers (Optional, Nullable, Strict, etc.)
-- Schema operation tools (pickStruct, omitStruct, etc.)
-- Complete validation system and custom validators
-- TypeScript type inference support
+- Complete basic type system (String, Number, Boolean, Date, ID)
+- Flexible composite types (List, Optional, Nullable, Record, Tuple)
+- Structured type definitions (ObjectType, Struct)
+- Union and intersection types (Union, Intersect, Literal)
+- Schema operation tools (pickObject, omitObject, partial, required)
+- Built-in and custom validator systems
+- Complete TypeScript type inference support
 
 ### [farrow-pipeline](/en/api/farrow-pipeline)
-**Pipeline and Context system** - Type-safe middleware pipeline
+**Type-safe middleware pipeline library** - Provides functional programming style request processing
 
 - Synchronous and asynchronous Pipeline creation
-- Flexible Context management system
+- Type-safe context management system
+- Container concept and dependency injection
 - Pipeline composition and middleware execution
-- Utility functions and type checking
-- Advanced patterns and best practices
+- Utilities and error handling
+- Async tracing support
 
 ## Quick Navigation
 
 ### HTTP Service
 
+#### Getting Started
+- [Installation and Quick Start](/en/api/farrow-http#installation-and-quick-start) - Get started in 5 minutes
+- [Basic Examples](/en/api/farrow-http#basic-examples) - Common code templates
+- [Complete Examples](/en/api/farrow-http#complete-examples) - Production-ready application code
+
 #### Core API
-- [`Http()`](/en/api/farrow-http#http-options) - Create HTTP application instance
-- [`Https()`](/en/api/farrow-http#https-options) - Create HTTPS application instance
-- [`Router()`](/en/api/farrow-http#router-创建路由器) - Create modular router
+- [Server Creation](/en/api/farrow-http#server-creation) - `Http()`, `Https()`, configuration options
+- [Route Definition](/en/api/farrow-http#route-definition) - `get()`, `post()`, `match()`, etc.
+- [Response Construction](/en/api/farrow-http#response-construction) - Response objects and methods
+- [Middleware](/en/api/farrow-http#middleware) - `use()`, onion model, error handling
 
-#### Response Handling
-- [`Response.json()`](/en/api/farrow-http#response-json-json-响应) - JSON response
-- [`Response.text()`](/en/api/farrow-http#response-text-纯文本响应) - Text response
-- [`Response.file()`](/en/api/farrow-http#response-file-文件响应) - File response
-- [`Response.redirect()`](/en/api/farrow-http#response-redirect-重定向响应) - Redirect response
-
-#### Route Matching
-- [HTTP method shortcuts](/en/api/farrow-http#http-方法快捷方式) - `get()`, `post()`, `put()`, etc.
-- [URL Schema syntax](/en/api/farrow-http#url-schema-语法) - Path parameters and query parameters
-- [`match()`](/en/api/farrow-http#match-详细路由匹配) - Detailed route matching
+#### Advanced Features  
+- [Router System](/en/api/farrow-http#router-system) - `Router()`, `route()`, modular
+- [Context Management](/en/api/farrow-http#context-management) - Context, hooks, request isolation
+- [Error Handling](/en/api/farrow-http#error-handling) - Exception handling mechanism
+- [Static Files](/en/api/farrow-http#static-files) - `serve()`, security protection
+- [Testing Support](/en/api/farrow-http#testing) - Test configuration and examples
 
 ### Schema Validation
 
 #### Basic Types
-- [`String`](/en/api/farrow-schema#string-字符串类型) - String validation
-- [`Int`](/en/api/farrow-schema#int-整数类型) / [`Number`](/en/api/farrow-schema#number-数字类型（整数和浮点数）) - Number validation
-- [`Boolean`](/en/api/farrow-schema#boolean-布尔类型) - Boolean validation
-- [`Date`](/en/api/farrow-schema#date-日期类型) - Date validation
-- [`Literal`](/en/api/farrow-schema#literal-精确值匹配) - Literal types
+- [`String`](/en/api/farrow-schema#string---string-type) - String validation
+- [`Number`](/en/api/farrow-schema#number---numeric-type) - Numeric validation
+- [`Boolean`](/en/api/farrow-schema#boolean---boolean-type) - Boolean validation
+- [`Date`](/en/api/farrow-schema#date---date-type) - Date validation
+- [`ID`](/en/api/farrow-schema#id---identifier-type) - Identifier type
 
 #### Composite Types
-- [`ObjectType`](/en/api/farrow-schema#objecttype-对象类型) - Object type definition
-- [`List`](/en/api/farrow-schema#list-数组类型) - Array type validation
-- [`Union`](/en/api/farrow-schema#union-联合类型) - Union types
-- [`Struct`](/en/api/farrow-schema#struct-结构体类型) - Struct definition
+- [`List`](/en/api/farrow-schema#list---array-type) - Array type validation
+- [`Optional`](/en/api/farrow-schema#optional---optional-type) - Optional fields
+- [`Nullable`](/en/api/farrow-schema#nullable---nullable-type) - Nullable type
+- [`Record`](/en/api/farrow-schema#record---key-value-type) - Key-value type
+- [`Tuple`](/en/api/farrow-schema#tuple---tuple-type) - Tuple type
+
+#### Structured Types
+- [`ObjectType`](/en/api/farrow-schema#objecttype---structured-object) - Object type definition
+- [`Struct`](/en/api/farrow-schema#struct---quick-construction) - Struct definition
+- [`Union`](/en/api/farrow-schema#union---or-logic) - Union types
+- [`Intersect`](/en/api/farrow-schema#intersect---and-logic) - Intersection types
 
 #### Utility Functions
-- [`pickStruct()`](/en/api/farrow-schema#pickstruct-选择字段) - Pick fields
-- [`omitStruct()`](/en/api/farrow-schema#omitstruct-排除字段) - Omit fields
-- [`partialStruct()`](/en/api/farrow-schema#partialstruct-可选化所有字段) - Partial update
-- [`TypeOf<T>`](/en/api/farrow-schema#typeof-获取-typescript-类型) - Type inference
+- [`TypeOf`](/en/api/farrow-schema#typeof---extract-typescript-type) - Type inference
+- [`pickObject`](/en/api/farrow-schema#pickobject---select-objecttype-fields) - Pick fields
+- [`omitObject`](/en/api/farrow-schema#omitobject---exclude-objecttype-fields) - Omit fields
+- [`partial`](/en/api/farrow-schema#partial---convert-to-optional-fields) - Convert to optional
 
 ### Pipeline System
 
@@ -83,7 +96,7 @@ Farrow provides a complete API for building type-safe Web applications. This doc
 #### Context Management
 - [`createContext()`](/en/api/farrow-pipeline#createcontext) - Create context
 - [`createContainer()`](/en/api/farrow-pipeline#createcontainer) - Create container
-- [`useContainer()`](/en/api/farrow-pipeline#usecontainer) - Get container
+- [Container Concept](/en/api/farrow-pipeline#container-concept) - Dependency injection container
 
 ## API Conventions
 

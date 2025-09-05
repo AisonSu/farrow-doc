@@ -470,14 +470,14 @@ app.post('/users', {
 ### Middleware Basics
 
 ```typescript
-// farrow-pipeline's generic middleware signature
-type Middleware<I = unknown, O = unknown> = (input: I, next: Next<I, O>) => O
-type Next<I = unknown, O = unknown> = (input: I) => O
+// farrow-http middleware type definition
+type HttpMiddleware = (
+  request: RequestInfo, 
+  next: Next<RequestInfo, MaybeAsyncResponse>
+) => MaybeAsyncResponse
 
-// farrow-http's middleware is actually AsyncPipeline
-// HTTP middleware type: AsyncPipeline<RequestInfo, Response>
-// Middleware function signature: (request: RequestInfo, next: Next<RequestInfo, MaybeAsyncResponse>) => MaybeAsyncResponse
-// Where MaybeAsyncResponse = Response | Promise<Response>
+type Next<I = unknown, O = unknown> = (input: I) => O
+type MaybeAsyncResponse = Response | Promise<Response>
 
 // Basic middleware example
 app.use((request, next) => {
@@ -499,11 +499,10 @@ app.use(async (request, next) => {
 #### Logging Middleware
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response, MaybeAsyncResponse } from 'farrow-http'
+import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
 
 // Logging middleware - needs async processing to correctly calculate response time
-const logger: Middleware<RequestInfo, MaybeAsyncResponse> = async (request, next) => {
+const logger: HttpMiddleware = async (request, next) => {
   const start = Date.now()
   const { method, pathname } = request
   
@@ -525,13 +524,13 @@ app.use(logger)
 #### Authentication Middleware
 
 ```typescript
-import { createContext, Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response, MaybeAsyncResponse } from 'farrow-http'
+import { createContext } from 'farrow-pipeline'
+import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
 
 const UserContext = createContext<User | null>(null)
 
 // Authentication middleware - usually needs async database queries
-const authenticate: Middleware<RequestInfo, MaybeAsyncResponse> = async (request, next) => {
+const authenticate: HttpMiddleware = async (request, next) => {
   const token = request.headers?.authorization?.replace('Bearer ', '')
   
   if (!token) {
@@ -554,14 +553,13 @@ const authenticate: Middleware<RequestInfo, MaybeAsyncResponse> = async (request
 }
 
 // Apply to specific routes
-app.use('/api/*', authenticate)
+app.use('/api/<path*:string>', authenticate)
 ```
 
 #### CORS Middleware
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response } from 'farrow-http'
+import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
 
 interface CorsOptions {
   origin?: string
@@ -571,7 +569,7 @@ interface CorsOptions {
 }
 
 // Returns a middleware function
-const cors = (options: CorsOptions = {}): Middleware<RequestInfo, Response> => {
+const cors = (options: CorsOptions = {}): HttpMiddleware => {
   const {
     origin = '*',
     methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -604,11 +602,10 @@ app.use(cors({ origin: 'https://example.com' }))
 #### Rate Limiting Middleware
 
 ```typescript
-import { Middleware } from 'farrow-pipeline'
-import { RequestInfo, Response } from 'farrow-http'
+import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
 
 // Higher-order function, returns configured middleware
-const rateLimit = (maxRequests = 100, windowMs = 60000): Middleware<RequestInfo, Response> => {
+const rateLimit = (maxRequests = 100, windowMs = 60000): HttpMiddleware => {
   const requests = new Map<string, number[]>()
   
   return (request, next) => {
@@ -805,39 +802,43 @@ app.get('/login').use(() => {
 Due to an initial design oversight, you need to be careful about order when merging responses:
 
 ```typescript
-// ❌ Avoid: putting cookie at the end of merge, will be overridden by cookie's empty body
-Response.text('Hello').merge(Response.cookie('token', '123'))
+// ⚠️ Important: Response.merge follows "later overrides former" principle
 
-// ✅ Recommended: chain calls or put body last
+// ❌ Wrong: putting response with body first, will be overridden by empty body
+Response.text('Hello').merge(Response.cookie('token', '123'))
+// Result: only cookie, text content lost!
+
+// ✅ Correct: chain calls
 Response.text('Hello').cookie('token', '123')
-// or
-Response.merge(Response.cookie('token', '123'), Response.text('Hello'))
+
+// ✅ Correct: empty response first, response with body last
+Response.cookie('token', '123').merge(Response.text('Hello'))
 ```
 
 ```typescript
 // Basic usage of Response.merge
 app.get('/api/data').use(() => {
-  const dataResponse = Response.json({ data: 'value' })
   const headersResponse = Response
     .header('X-Custom', 'value')
     .header('X-Request-ID', generateId())
+  const dataResponse = Response.json({ data: 'value' })
   
-  // Merge two responses - keep body, add headers
-  return Response.merge(dataResponse, headersResponse)
+  // Correct: headers response (empty body) first, data response (with body) last
+  return headersResponse.merge(dataResponse)
 })
 
 // Using Response.merge in middleware
 const addSecurityHeaders = (request, next) => {
   const response = next(request)
   
-  // Create response with security headers
+  // Create response with security headers (empty body)
   const securityHeaders = Response
     .header('X-Content-Type-Options', 'nosniff')
     .header('X-Frame-Options', 'DENY')
     .header('X-XSS-Protection', '1; mode=block')
   
-  // Merge original response and security headers
-  return Response.merge(response, securityHeaders)
+  // Correct: security headers (empty body) first, original response last
+  return securityHeaders.merge(response)
 }
 
 // Conditional response merging
@@ -848,7 +849,7 @@ app.get('/api/profile').use((request) => {
   // Add additional response properties based on condition
   if (user.isAdmin) {
     const adminHeaders = Response.header('X-Admin-Access', 'true')
-    return Response.merge(baseResponse, adminHeaders)
+    return adminHeaders.merge(baseResponse)  // Correct: empty body first
   }
   
   return baseResponse
@@ -863,8 +864,8 @@ app.get('/api/resource').use(() => {
     .header('X-Resource-ID', '123')
   const cookies = Response.cookie('lastResourceId', '123')
   
-  // Merge all response properties
-  return Response.merge(data, status, headers, cookies)
+  // Correct: put response with body last
+  return Response.merge(status, headers, cookies, data)
 })
 ```
 
@@ -1112,12 +1113,12 @@ app.post('/posts').use((request) => {
 ### Global Error Handling
 
 ```typescript
-// Error handling middleware (put at the beginning)
-app.use((request, next) => {
+// Error handling middleware (put at the beginning) - uniformly use async/await
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
-    // Handle synchronous errors
+    // Handle all errors (synchronous and asynchronous)
     return handleError(error)
   }
 })
@@ -1180,7 +1181,7 @@ function handleError(error: unknown): Response {
 ```typescript
 // Global Schema error handling
 app.match({
-  url: '/*',
+  url: '/<path*:string>',
   onSchemaError: (error, input, next) => {
     const field = error.path?.join('.')
     
@@ -1221,7 +1222,7 @@ Let's apply all the knowledge we've learned to build a complete blog API:
 
 ```typescript
 import { Http, Response, Router, HttpError } from 'farrow-http'
-import { ObjectType, String, Number, Boolean, Date, List, Optional, TypeOf } from 'farrow-schema'
+import { ObjectType, String, Number, Boolean, Date, List, Optional, TypeOf, Union, Literal } from 'farrow-schema'
 import { createContext } from 'farrow-pipeline'
 import { Validator, ValidatorType } from 'farrow-schema/validator'
 
@@ -1528,9 +1529,9 @@ app.route('/api/posts').use(postsRouter)
 app.route('/api').use(commentsRouter)
 
 // Error handling
-app.use((request, next) => {
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
     if (error instanceof HttpError) {
       return Response.status(error.status).json({

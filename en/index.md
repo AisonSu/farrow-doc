@@ -102,7 +102,8 @@ You don't need to learn all concepts at the start. Begin with a simple HTTP serv
 
 ### Community Tools
 
-- **[farrow-auth](https://github.com/AisonSu/farrow-auth)** - Authentication solution
+- **[farrow-auth-session](https://github.com/AisonSu/farrow-auth-session)** - Session authentication solution
+- **[farrow-auth-jwt](https://github.com/AisonSu/farrow-auth-jwt)** - JWT authentication solution
 
 </div>
 

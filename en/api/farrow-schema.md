@@ -1,1053 +1,913 @@
-# farrow-schema API Reference
+# farrow-schema User API Reference
 
-farrow-schema is a powerful Schema definition and validation system that provides runtime type validation and TypeScript type inference capabilities.
+## Overview
 
-## Installation
+farrow-schema is a powerful TypeScript type validation and serialization library. Through type-driven design, it makes it easy to define data structures, validate inputs, and handle errors.
 
-```bash
-npm install farrow-schema
+## Table of Contents
+
+- [Schema Constructors](#schema-constructors)
+  - [Basic Types](#basic-types)
+    - [String - String Type](#string---string-type)
+    - [Number - Numeric Type](#number---numeric-type)
+    - [Boolean - Boolean Type](#boolean---boolean-type)
+    - [Date - Date Type](#date---date-type)
+    - [ID - Identifier Type](#id---identifier-type)
+  - [Composite Types](#composite-types)
+    - [List - Array Type](#list---array-type)
+    - [Optional - Optional Type](#optional---optional-type)
+    - [Nullable - Nullable Type](#nullable---nullable-type)
+    - [Record - Key-Value Type](#record---key-value-type)
+    - [Tuple - Tuple Type](#tuple---tuple-type)
+  - [Structured Types](#structured-types)
+    - [ObjectType - Structured Object](#objecttype---structured-object)
+    - [Struct - Quick Construction](#struct---quick-construction)
+  - [Union and Intersection](#union-and-intersection)
+    - [Union - Or Logic](#union---or-logic)
+    - [Intersect - And Logic](#intersect---and-logic)
+    - [Literal - Literal Type](#literal---literal-type)
+- [Schema Operations](#schema-operations)
+  - [Type Inference](#type-inference)
+    - [TypeOf - Extract TypeScript Type](#typeof---extract-typescript-type)
+  - [Field Selection and Transformation](#field-selection-and-transformation)
+    - [pickObject - Select ObjectType Fields](#pickobject---select-objecttype-fields)
+    - [omitObject - Exclude ObjectType Fields](#omitobject---exclude-objecttype-fields)
+    - [pickStruct - Select Struct Fields](#pickstruct---select-struct-fields)
+    - [omitStruct - Exclude Struct Fields](#omitstruct---exclude-struct-fields)
+    - [partial - Convert to Optional Fields](#partial---convert-to-optional-fields)
+    - [required - Convert to Required Fields](#required---convert-to-required-fields)
+- [Validation System](#validation-system)
+  - [Built-in Validators](#built-in-validators)
+    - [createSchemaValidator - Create Dedicated Validator](#createschemavalidator---create-dedicated-validator)
+  - [Custom Validators](#custom-validators)
+    - [ValidatorType - Validator Base Class](#validatortype---validator-base-class)
+- [Error Handling](#error-handling)
+- [Practical Examples](#practical-examples)
+
+## Quick Start
+
+```typescript
+import { ObjectType, String, Number, List } from 'farrow-schema'
+import { Validator } from 'farrow-schema/validator'
+
+// Define User Schema
+class User extends ObjectType {
+  name = String
+  age = Number
+  tags = List(String)
+}
+
+// Validate data
+const result = Validator.validate(User, {
+  name: "John Doe",
+  age: 25,
+  tags: ["developer", "TypeScript"]
+})
+
+if (result.isOk) {
+  console.log("Validation successful:", result.value)
+} else {
+  console.log("Validation failed:", result.value.message)
+}
 ```
 
-## Basic Types
+---
 
-### Primitives
+## Schema Constructors
+
+### Basic Types
+
+Define the most fundamental data types.
 
 #### String - String Type
 
 ```typescript
-import { String } from 'farrow-schema'
+class User extends ObjectType {
+  name = String
+  email = String
+}
 
-const nameSchema = String
-const result = String.safeParse('hello') // { success: true, output: 'hello' }
+// Generated TypeScript type
+type UserType = {
+  name: string
+  email: string
+}
 ```
 
-#### Int - Integer Type
+#### Number - Numeric Type
 
 ```typescript
-import { Int } from 'farrow-schema'
-
-const ageSchema = Int
-const result = Int.safeParse(25) // { success: true, output: 25 }
-const error = Int.safeParse(25.5) // { success: false, error: ValidationError }
-```
-
-#### Float - Floating Point Type
-
-```typescript
-import { Float } from 'farrow-schema'
-
-const priceSchema = Float
-const result = Float.safeParse(19.99) // { success: true, output: 19.99 }
-```
-
-#### Number - Number Type (integer and floating point)
-
-```typescript
-import { Number } from 'farrow-schema'
-
-const numberSchema = Number
-const result1 = Number.safeParse(42) // { success: true, output: 42 }
-const result2 = Number.safeParse(3.14) // { success: true, output: 3.14 }
+class Product extends ObjectType {
+  price = Number      // Regular number
+  quantity = Int      // Integer
+  weight = Float      // Floating point
+}
 ```
 
 #### Boolean - Boolean Type
 
 ```typescript
-import { Boolean } from 'farrow-schema'
-
-const activeSchema = Boolean
-const result = Boolean.safeParse(true) // { success: true, output: true }
+class Settings extends ObjectType {
+  enabled = Boolean
+  visible = Boolean
+}
 ```
 
 #### Date - Date Type
 
 ```typescript
-import { Date } from 'farrow-schema'
-
-const timestampSchema = Date
-const result = Date.safeParse(new Date()) // { success: true, output: Date }
-const result2 = Date.safeParse('2023-12-25') // Auto-converted to Date object
-```
-
-#### JSON - JSON Type
-
-```typescript
-import { JSON } from 'farrow-schema'
-
-const dataSchema = JSON
-const result = JSON.safeParse({ key: 'value' }) // Accepts any serializable value
+class Event extends ObjectType {
+  title = String
+  startDate = Date
+  endDate = Date
+}
 ```
 
 #### ID - Identifier Type
 
 ```typescript
-import { ID } from 'farrow-schema'
-
-const userIdSchema = ID
-const result = ID.safeParse('user_123') // { success: true, output: 'user_123' }
-// ID is essentially a non-empty string
-```
-
-### Literal Types
-
-#### Literal - Exact Value Matching
-
-```typescript
-import { Literal } from 'farrow-schema'
-
-const statusSchema = Literal('active')
-const themeSchema = Literal('dark')
-const countSchema = Literal(42)
-
-// Usage examples
-const result1 = statusSchema.safeParse('active') // Success
-const result2 = statusSchema.safeParse('inactive') // Failure
-```
-
-## Composite Types
-
-### ObjectType - Object Type
-
-#### Basic Usage
-
-```typescript
-import { ObjectType, String, Int } from 'farrow-schema'
-
 class User extends ObjectType {
-  id = Int
+  id = ID           // Equivalent to String, but semantically clearer
   name = String
-  email = String
+}
+```
+
+---
+
+### Composite Types
+
+Combine basic types to build complex structures.
+
+#### List - Array Type
+
+```typescript
+class Blog extends ObjectType {
+  title = String
+  tags = List(String)              // string[]
+  scores = List(Number)            // number[]
+  nested = List(List(String))      // string[][]
+}
+```
+
+#### Optional - Optional Type
+
+```typescript
+class User extends ObjectType {
+  name = String                    // Required
+  bio = Optional(String)           // string | undefined
+  avatar = Optional(String)        // string | undefined
 }
 
-// Validation usage
-const userData = { id: 1, name: 'Alice', email: 'alice@example.com' }
-const result = User.safeParse(userData)
-// result.success === true, result.output is type-safe User object
-
-// Get TypeScript type
-type UserType = TypeOf<typeof User>
-// { id: number; name: string; email: string }
+// Generated TypeScript type
+type UserType = {
+  name: string
+  bio?: string
+  avatar?: string
+}
 ```
 
-#### Nested Objects
+#### Nullable - Nullable Type
 
 ```typescript
-class Profile extends ObjectType {
-  bio = String
-  avatar = String
-  social = {
-    twitter: String,
-    github: String
+class Article extends ObjectType {
+  title = String
+  content = Nullable(String)       // string | null
+}
+
+// Usage difference
+const data1 = { title: "Title" }                    // ❌ content must be provided
+const data2 = { title: "Title", content: null }     // ✅ explicitly provide null
+```
+
+#### Record - Key-Value Type
+
+```typescript
+class Config extends ObjectType {
+  labels = Record(String)          // { [key: string]: string }
+  counters = Record(Number)        // { [key: string]: number }
+}
+```
+
+#### Tuple - Tuple Type
+
+```typescript
+class Geometry extends ObjectType {
+  point = Tuple(Number, Number)                    // [number, number]
+  line = Tuple(Number, Number, Number, Number)     // [number, number, number, number]
+}
+```
+
+---
+
+### Structured Types
+
+Define complex nested object structures with support for recursive references.
+
+```typescript
+// Basic usage
+class User extends ObjectType {
+  id = String
+  name = String
+  email = String
+  profile = {
+    bio: Optional(String),
+    avatar: Optional(String),
+    social: {
+      twitter: Optional(String),
+      github: Optional(String)
+    }
   }
 }
 
-class UserWithProfile extends ObjectType {
-  id = Int
-  name = String
-  profile = Profile
-}
-
-// Usage
-const user = {
-  id: 1,
-  name: 'Alice',
+// Generated TypeScript type
+type UserType = {
+  id: string
+  name: string  
+  email: string
   profile: {
-    bio: 'Developer',
-    avatar: 'avatar.jpg',
+    bio?: string
+    avatar?: string
     social: {
-      twitter: '@alice',
-      github: 'alice'
+      twitter?: string
+      github?: string
     }
   }
 }
 ```
 
-#### Optional and Nullable Fields
+#### Struct - Quick Construction
+
+**⚠️ Important limitation: Does not support recursive references**
 
 ```typescript
-import { Optional, Nullable } from 'farrow-schema'
-
-class User extends ObjectType {
-  id = Int
-  name = String
-  bio = Optional(String)           // string | undefined
-  lastLogin = Nullable(Date)       // Date | null
-  metadata = Optional(Nullable(JSON))  // any | null | undefined
-}
-```
-
-### List - Array Type
-
-```typescript
-import { List, String, Int } from 'farrow-schema'
-
-// Basic arrays
-const numbersSchema = List(Int)
-const tagsSchema = List(String)
-
-// Object arrays
-const usersSchema = List(User)
-
-// Nested arrays
-const matrixSchema = List(List(Int)) // number[][]
-
-// Usage examples
-const numbers = [1, 2, 3, 4, 5]
-const result = numbersSchema.safeParse(numbers) // Success
-
-const users = [
-  { id: 1, name: 'Alice', email: 'alice@example.com' },
-  { id: 2, name: 'Bob', email: 'bob@example.com' }
-]
-const usersResult = usersSchema.safeParse(users) // Success
-```
-
-### Struct - Structure Type
-
-```typescript
-import { Struct, String, Int } from 'farrow-schema'
-
-// Define structure using object literal
-const UserStruct = Struct({
-  id: Int,
-  name: String,
-  email: String
-})
-
-// Get type
-type UserStructType = TypeOf<typeof UserStruct>
-// { id: number; name: string; email: string }
-
-// ObjectType vs Struct
-// ObjectType: class syntax, suitable for complex inheritance scenarios
-// Struct: object literal, more lightweight, suitable for simple structures
-```
-
-### Union - Union Type
-
-#### Basic Union Type
-
-```typescript
-import { Union, Literal, String, Int } from 'farrow-schema'
-
-// Literal union
-const StatusSchema = Union([
-  Literal('pending'),
-  Literal('approved'),
-  Literal('rejected')
-])
-
-// Mixed type union
-const ValueSchema = Union([String, Int, Boolean])
-
-// Type inference
-type Status = TypeOf<typeof StatusSchema> // 'pending' | 'approved' | 'rejected'
-type Value = TypeOf<typeof ValueSchema>   // string | number | boolean
-```
-
-#### Discriminated Union
-
-```typescript
-const ResultSchema = Union([
+// ✅ Quick structure definition in union types
+const APIResult = Union(
   Struct({
-    type: Literal('success'),
+    success: Literal(true),
     data: String
   }),
   Struct({
-    type: Literal('error'),
-    message: String,
-    code: Int
+    success: Literal(false),
+    error: String
   })
-])
+)
 
-// Usage
-const successResult = { type: 'success', data: 'Hello World' }
-const errorResult = { type: 'error', message: 'Not Found', code: 404 }
-
-type Result = TypeOf<typeof ResultSchema>
-// { type: 'success'; data: string } | { type: 'error'; message: string; code: number }
-```
-
-### Tuple - Tuple Type
-
-```typescript
-import { Tuple, String, Int, Boolean } from 'farrow-schema'
-
-// Fixed-length arrays
-const PointSchema = Tuple([Int, Int])           // [number, number]
-const PersonSchema = Tuple([String, Int])       // [string, number]
-const ConfigSchema = Tuple([String, Int, Boolean]) // [string, number, boolean]
-
-// Usage example
-const point = [10, 20]
-const result = PointSchema.safeParse(point) // { success: true, output: [10, 20] }
-
-type Point = TypeOf<typeof PointSchema> // [number, number]
-```
-
-### Record - Record Type
-
-```typescript
-import { Record, String, Int } from 'farrow-schema'
-
-// Key-value pair structure
-const ScoresSchema = Record(String, Int) // Record<string, number>
-const ConfigSchema = Record(String, String) // Record<string, string>
-
-// Usage example
-const scores = {
-  alice: 95,
-  bob: 87,
-  charlie: 92
-}
-
-const result = ScoresSchema.safeParse(scores) // Success
-type Scores = TypeOf<typeof ScoresSchema> // Record<string, number>
-```
-
-## Modifiers and Tools
-
-### Optional - Optional Type
-
-```typescript
-import { Optional, String, Int } from 'farrow-schema'
-
-const optionalName = Optional(String)    // string | undefined
-const optionalAge = Optional(Int)        // number | undefined
-
-class User extends ObjectType {
-  id = Int
-  name = String
-  bio = Optional(String)  // Optional field
-}
-```
-
-### Nullable - Nullable Type
-
-```typescript
-import { Nullable, String, Date } from 'farrow-schema'
-
-const nullableName = Nullable(String)       // string | null
-const nullableDate = Nullable(Date)         // Date | null
-
-class Post extends ObjectType {
-  title = String
-  publishedAt = Nullable(Date)  // Publish date that may be null
-}
-```
-
-### Readonly - Readonly Type
-
-```typescript
-import { Readonly, String, Int } from 'farrow-schema'
-
-const readonlyUser = Readonly(Struct({
-  id: Int,
-  name: String
-}))
-
-type ReadonlyUserType = TypeOf<typeof readonlyUser>
-// { readonly id: number; readonly name: string }
-```
-
-### Strict - Strict Mode
-
-```typescript
-import { Strict, Struct, String, Int } from 'farrow-schema'
-
-// Disallow extra fields
-const StrictUser = Strict(Struct({
-  id: Int,
-  name: String
-}))
-
-// This will fail - contains extra email field
-const result = StrictUser.safeParse({
-  id: 1,
-  name: 'Alice',
-  email: 'alice@example.com' // Extra field
+// ❌ Cannot handle recursive references
+const Comment = Struct({
+  id: String,
+  content: String,
+  replies: List(Comment)  // Error: Cannot reference Comment before definition
 })
 ```
 
-### NonEmpty - Non-empty Type
+---
+
+### Union and Intersection
+
+#### Union - Or Logic
 
 ```typescript
-import { NonEmpty, String, List } from 'farrow-schema'
+// Enum values
+const Status = Union(
+  Literal('pending'),
+  Literal('success'), 
+  Literal('error')
+)
 
-const nonEmptyString = NonEmpty(String)    // Non-empty string
-const nonEmptyList = NonEmpty(List(Int))   // Non-empty array
-
-// Usage examples
-nonEmptyString.safeParse('')       // Failure
-nonEmptyString.safeParse('hello')  // Success
-
-nonEmptyList.safeParse([])         // Failure
-nonEmptyList.safeParse([1, 2, 3])  // Success
+// Complex union types
+const APIResponse = Union(
+  Struct({
+    status: Literal('success'),
+    data: String
+  }),
+  Struct({
+    status: Literal('error'),
+    message: String
+  })
+)
 ```
 
-## Schema Operation Tools
-
-### pickStruct() - Select Fields
+#### Intersect - And Logic
 
 ```typescript
-import { pickStruct } from 'farrow-schema'
+class BaseUser extends ObjectType {
+  id = String
+  name = String
+}
 
+class AdminUser extends ObjectType {
+  role = Literal('admin')
+  permissions = List(String)
+}
+
+// Combine multiple types
+const FullUser = Intersect(BaseUser, AdminUser)
+type FullUserType = TypeOf<typeof FullUser>
+```
+
+#### Literal - Literal Type
+
+```typescript
+const Environment = Union(
+  Literal('development'),
+  Literal('production'), 
+  Literal('test')
+)
+
+const HttpMethod = Union(
+  Literal('GET'),
+  Literal('POST'),
+  Literal('PUT'),
+  Literal('DELETE')
+)
+```
+
+---
+
+## Schema Operations
+
+### Type Inference
+
+**Type signature**
+```typescript
+function validate<T extends SchemaCtor>(
+  Ctor: T,
+  input: unknown
+): ValidationResult<TypeOf<T>>
+
+type ValidationResult<T> = Result<T, ValidationError>
+```
+
+**Example**
+```typescript
+import { Validator } from 'farrow-schema/validator'
+
+function processPayment(payment: TypeOf<typeof Payment>) {
+  // payment is fully type-safe
+  return payment.amount * 0.1
+}
+
+const result = Validator.validate(Payment, unknownData)
+if (result.isOk) {
+  processPayment(result.value) // Type-safe
+}
+```
+
+### Built-in Validators
+
+**Type signature**
+```typescript
+function createSchemaValidator<S extends SchemaCtor>(
+  SchemaCtor: S,
+  options?: ValidationOptions
+): (input: unknown) => ValidationResult<TypeOf<S>>
+```
+
+**Example**
+```typescript
+// Create dedicated validator
+const validateUser = createSchemaValidator(User, { strict: true })
+
+// Use in API
+app.post('/users', (req, res) => {
+  const result = validateUser(req.body)
+  
+  if (result.isErr) {
+    return res.status(400).json({
+      error: result.value.message,
+      details: result.value.path
+    })
+  }
+  
+  const user = result.value // Fully validated and type-safe
+  return res.json(createUser(user))
+})
+```
+
+### Custom Validators
+
+**Type signature**
+```typescript
+abstract class ValidatorType<T = unknown> extends Schema {
+  __type: T
+  
+  abstract validate(input: unknown): ValidationResult<T>
+  
+  Ok(value: T): ValidationResult<T>
+  Err(message: string, path?: (string | number)[]): ValidationResult<T>
+}
+```
+
+**Example**
+```typescript
+import { ValidatorType, Validator } from 'farrow-schema/validator'
+
+class EmailType extends ValidatorType<string> {
+  validate(input: unknown) {
+    if (typeof input !== 'string') {
+      return this.Err('Expected string')
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(input)) {
+      return this.Err('Invalid email format')
+    }
+    
+    return this.Ok(input)
+  }
+}
+
+const Email = new EmailType()
+```
+
+**Example**
+```typescript
+// String length validator
+const StringLength = (min: number, max: number) => {
+  return class StringLength extends ValidatorType<string> {
+    validate(input: unknown) {
+      const result = Validator.validate(String, input)
+      if (result.isErr) return result
+      
+      if (result.value.length < min || result.value.length > max) {
+        return this.Err(`String length must be between ${min} and ${max}`)
+      }
+      
+      return this.Ok(result.value)
+    }
+  }
+}
+
+// Number range validator
+const NumberRange = (min: number, max: number) => {
+  return class NumberRange extends ValidatorType<number> {
+    validate(input: unknown) {
+      const result = Validator.validate(Number, input)
+      if (result.isErr) return result
+      
+      if (result.value < min || result.value > max) {
+        return this.Err(`Number must be between ${min} and ${max}`)
+      }
+      
+      return this.Ok(result.value)
+    }
+  }
+}
+
+// Usage
 class User extends ObjectType {
-  id = Int
+  name = new (StringLength(2, 50))()
+  age = new (NumberRange(0, 120))()
+}
+```
+
+---
+
+### Field Selection and Transformation
+
+#### TypeOf - Extract TypeScript Type
+
+**Type signature**
+```typescript
+type TypeOf<T extends SchemaCtor | Schema> = 
+  T extends new () => { __type: infer U } ? U : never
+```
+
+**Example**
+```typescript
+class User extends ObjectType {
+  name = String
+  email = String
+  age = Number
+}
+
+type UserType = TypeOf<typeof User>
+// Equivalent to:
+// type UserType = {
+//   name: string
+//   email: string  
+//   age: number
+// }
+
+function createUser(userData: UserType): UserType {
+  return {
+    name: userData.name,
+    email: userData.email,
+    age: userData.age
+  }
+}
+```
+
+#### pickObject - Select ObjectType Fields
+
+**Type signature**
+```typescript
+function pickObject<T extends ObjectType, Keys extends SchemaField<T, keyof T>[]>(
+  Ctor: new () => T,
+  keys: Keys
+): PickObject<T, Keys>
+```
+
+**Example**
+```typescript
+class FullUser extends ObjectType {
+  id = String
   name = String
   email = String
   password = String
   createdAt = Date
 }
 
-// Select specific fields
-const PublicUser = pickStruct(User, ['id', 'name', 'email'])
-// { id: number; name: string; email: string }
+// Pick specific fields
+const PublicUser = pickObject(FullUser, ['id', 'name'])
+const AuthUser = pickObject(FullUser, ['id', 'name', 'email'])
 
-const UserSummary = pickStruct(User, ['id', 'name'])
-// { id: number; name: string }
+type PublicUserType = TypeOf<typeof PublicUser>
+// { id: string; name: string }
+
+type AuthUserType = TypeOf<typeof AuthUser>
+// { id: string; name: string; email: string }
 ```
 
-### omitStruct() - Exclude Fields
+#### omitObject - Exclude ObjectType Fields
 
+**Type signature**
 ```typescript
-import { omitStruct } from 'farrow-schema'
+function omitObject<T extends ObjectType, Keys extends SchemaField<T, keyof T>[]>(
+  Ctor: new () => T,
+  keys: Keys
+): OmitObject<T, Keys>
+```
 
+**Example**
+```typescript
 // Exclude sensitive fields
-const SafeUser = omitStruct(User, ['password'])
-// { id: number; name: string; email: string; createdAt: Date }
+const SafeUser = omitObject(FullUser, ['password'])
 
-const PublicUser = omitStruct(User, ['password', 'email'])
-// { id: number; name: string; createdAt: Date }
+type SafeUserType = TypeOf<typeof SafeUser>
+// { id: string; name: string; email: string; createdAt: Date }
+
+const UserInput = omitObject(FullUser, ['id', 'createdAt'])
+
+type UserInputType = TypeOf<typeof UserInput>
+// { name: string; email: string; password: string }
 ```
 
-### partialStruct() - Make All Fields Optional
+#### pickStruct - Select Struct Fields
 
+**Type signature**
 ```typescript
-import { partialStruct } from 'farrow-schema'
-
-// Partial data for updates
-const UpdateUser = partialStruct(User)
-// { id?: number; name?: string; email?: string; password?: string; createdAt?: Date }
-
-// Use case: PATCH requests
-const updateData = { name: 'New Name' } // Only update name
-const result = UpdateUser.safeParse(updateData) // Success
+function pickStruct<T extends StructType, Keys extends (keyof T['descriptors'])[]>(
+  struct: T,
+  keys: Keys
+): PickStruct<T, Keys>
 ```
 
-### requiredStruct() - Make All Fields Required
-
+**Example**
 ```typescript
-import { requiredStruct } from 'farrow-schema'
+const FullUserStruct = Struct({
+  id: String,
+  name: String,
+  email: String,
+  password: String,
+  createdAt: Date
+})
 
-class PartialUser extends ObjectType {
-  id = Optional(Int)
+// Pick specific fields
+const PublicUserStruct = pickStruct(FullUserStruct, ['id', 'name'])
+
+type PublicUserType = TypeOf<typeof PublicUserStruct>
+// { id: string; name: string }
+```
+
+#### omitStruct - Exclude Struct Fields
+
+**Type signature**
+```typescript
+function omitStruct<T extends StructType, Keys extends (keyof T['descriptors'])[]>(
+  struct: T,
+  keys: Keys
+): OmitStruct<T, Keys>
+```
+
+**Example**
+```typescript
+// Exclude sensitive fields
+const SafeUserStruct = omitStruct(FullUserStruct, ['password'])
+
+type SafeUserType = TypeOf<typeof SafeUserStruct>
+// { id: string; name: string; email: string; createdAt: Date }
+```
+
+#### partial - Convert to Optional Fields
+
+**Type signature**
+```typescript
+function partial<T extends ObjectType>(
+  Ctor: new () => T
+): PartialObject<T>
+
+function partialStruct<T extends StructType>(
+  struct: T  
+): PartialStruct<T>
+```
+
+**Example**
+```typescript
+class User extends ObjectType {
+  id = String
+  name = String
+  email = String
+}
+
+const PartialUser = partial(User)
+
+type PartialUserType = TypeOf<typeof PartialUser>
+// { id?: string; name?: string; email?: string }
+
+const PartialUserStruct = partialStruct(UserStruct)
+
+type PartialUserStructType = TypeOf<typeof PartialUserStruct>
+// { id?: string; name?: string; email?: string }
+```
+
+#### required - Convert to Required Fields
+
+**Type signature**
+```typescript
+function required<T extends ObjectType>(
+  Ctor: new () => T
+): RequiredObject<T>
+
+function requiredStruct<T extends StructType>(
+  struct: T
+): RequiredStruct<T>
+```
+
+**Example**
+```typescript
+class OptionalUser extends ObjectType {
+  id = Optional(String)
   name = Optional(String)
   email = Optional(String)
 }
 
-// Force all fields to be required
-const RequiredUser = requiredStruct(PartialUser)
-// { id: number; name: string; email: string }
+const RequiredUser = required(OptionalUser)
+
+type RequiredUserType = TypeOf<typeof RequiredUser>
+// { id: string; name: string; email: string }
+
+const RequiredUserStruct = requiredStruct(OptionalUserStruct)
+
+type RequiredUserStructType = TypeOf<typeof RequiredUserStruct>
+// { id: string; name: string; email: string }
 ```
 
-### intersectStruct() - Merge Structures
+---
+
+## Error Handling
+
+farrow-schema uses functional error handling patterns.
 
 ```typescript
-import { intersectStruct } from 'farrow-schema'
+import { Result, Ok, Err } from 'farrow-schema/result'
 
-const BaseUser = Struct({
-  id: Int,
-  name: String
-})
+function processUser(data: unknown): Result<UserType, string> {
+  const result = Validator.validate(User, data)
+  
+  if (result.isErr) {
+    return Err(`Validation failed: ${result.value.message}`)
+  }
+  
+  if (result.value.age < 18) {
+    return Err('User must be at least 18 years old')
+  }
+  
+  return Ok(result.value)
+}
 
-const UserExtension = Struct({
-  email: String,
-  createdAt: Date
-})
-
-// Merge two structures
-const FullUser = intersectStruct([BaseUser, UserExtension])
-// { id: number; name: string; email: string; createdAt: Date }
-```
-
-## Validation System
-
-### Basic Validation Methods
-
-#### safeParse() - Safe Parsing
-
-```typescript
-const result = schema.safeParse(input)
-
-if (result.success) {
-  // Validation successful
-  console.log(result.output) // Type-safe result
+// Usage
+const result = processUser(unknownData)
+if (result.isOk) {
+  console.log('User processed:', result.value)
 } else {
-  // Validation failed
-  console.error(result.error.message)
-  console.error(result.error.path) // Error field path
+  console.error('Error:', result.value)
 }
 ```
 
-#### parse() - Direct Parsing (may throw exception)
+### ValidationError - Validation Error
 
 ```typescript
-try {
-  const result = schema.parse(input) // Direct return or throw exception
-  console.log(result)
-} catch (error) {
-  console.error('Validation failed:', error.message)
-}
-```
-
-### Validation Error Handling
-
-#### ValidationError Structure
-
-```typescript
+// Error contains detailed information
 interface ValidationError {
-  message: string                    // Error description
-  path: (string | number)[]         // Error path ['user', 'profile', 'email']
-  expected: any                     // Expected type
-  actual: any                       // Actual received value
-  issues: ValidationIssue[]         // Detailed error list
+  message: string
+  path: (string | number)[]
+  input: unknown
 }
 
-// Actual usage
-const userSchema = Struct({
-  profile: Struct({
-    email: String
-  })
-})
-
-const result = userSchema.safeParse({
-  profile: { email: 123 } // Type error
-})
-
-if (!result.success) {
-  console.log(result.error.path)     // ['profile', 'email']
-  console.log(result.error.message)  // 'Expected string, received number'
-  console.log(result.error.actual)   // 123
+// Example error
+const error = {
+  message: 'Expected string, got number',
+  path: ['user', 'name'],
+  input: 123
 }
 ```
 
-### Custom Validators
+---
 
-#### Creating Custom Schema
+## Practical Examples
+
+### Form Validation
 
 ```typescript
-import { SchemaCtor } from 'farrow-schema'
+// User registration form
+class UserRegistration extends ObjectType {
+  username = new (StringLength(3, 20))()
+  email = new EmailType()
+  password = new (StringLength(8, 128))()
+  confirmPassword = String
+  age = new (NumberRange(13, 120))()
+  terms = Literal(true)
+}
 
-// Email validator
-const Email = SchemaCtor((input: unknown) => {
-  if (typeof input !== 'string') {
-    return { tag: 'fail', error: 'Expected string' }
+const validateRegistration = createSchemaValidator(UserRegistration)
+
+// API endpoint
+app.post('/register', (req, res) => {
+  const result = validateRegistration(req.body)
+  
+  if (result.isErr) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      details: result.value
+    })
   }
   
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(input)) {
-    return { tag: 'fail', error: 'Invalid email format' }
+  const userData = result.value
+  if (userData.password !== userData.confirmPassword) {
+    return res.status(400).json({
+      error: 'Passwords do not match'
+    })
   }
   
-  return { tag: 'success', output: input.toLowerCase() }
+  // Continue with registration...
 })
+```
 
-// Range validator
-const Range = (min: number, max: number) => 
-  SchemaCtor((input: unknown) => {
-    if (typeof input !== 'number') {
-      return { tag: 'fail', error: 'Expected number' }
-    }
-    
-    if (input < min || input > max) {
-      return { tag: 'fail', error: `Number must be between ${min} and ${max}` }
-    }
-    
-    return { tag: 'success', output: input }
-  })
+### API Interface Definition
 
-// Use custom validators
+```typescript
+// User CRUD interfaces
 class User extends ObjectType {
-  email = Email
-  age = Range(0, 150)
-}
-```
-
-#### Composing Validators
-
-```typescript
-// Create reusable validator combinations
-const PositiveInt = SchemaCtor((input: unknown) => {
-  const intResult = Int.safeParse(input)
-  if (!intResult.success) return intResult
-  
-  if (intResult.output <= 0) {
-    return { tag: 'fail', error: 'Must be positive' }
-  }
-  
-  return { tag: 'success', output: intResult.output }
-})
-
-const Price = Range(0, 999999)  // Price range
-const Quantity = PositiveInt    // Positive integer quantity
-```
-
-## Transformers
-
-### Basic Transformation
-
-```typescript
-import { transform } from 'farrow-schema'
-
-// String transformation
-const TrimmedString = transform(String, (str) => str.trim())
-const UppercaseString = transform(String, (str) => str.toUpperCase())
-
-// Number transformation
-const RoundedNumber = transform(Float, (num) => Math.round(num))
-
-// Usage
-const result = TrimmedString.safeParse('  hello world  ')
-// { success: true, output: 'hello world' }
-```
-
-### Complex Transformation
-
-```typescript
-// Date string transformation
-const DateFromString = transform(String, (str) => {
-  const date = new Date(str)
-  if (isNaN(date.getTime())) {
-    throw new Error('Invalid date string')
-  }
-  return date
-})
-
-// JSON string transformation
-const JSONFromString = transform(String, (str) => {
-  try {
-    return JSON.parse(str)
-  } catch {
-    throw new Error('Invalid JSON string')
-  }
-})
-
-// Usage
-class Event extends ObjectType {
+  id = String
   name = String
-  date = DateFromString  // String auto-converted to Date
-  metadata = JSONFromString  // JSON string auto-parsed
-}
-```
-
-## Type Inference
-
-### TypeOf - Get TypeScript Type
-
-```typescript
-import { TypeOf } from 'farrow-schema'
-
-// Basic type inference
-type StringType = TypeOf<typeof String> // string
-type IntType = TypeOf<typeof Int>       // number
-
-// Complex type inference
-class User extends ObjectType {
-  id = Int
-  name = String
-  profile = Struct({
-    bio: Optional(String),
-    tags: List(String),
-    settings: Record(String, Boolean)
-  })
-}
-
-type UserType = TypeOf<typeof User>
-/*
-{
-  id: number
-  name: string
-  profile: {
-    bio?: string
-    tags: string[]
-    settings: Record<string, boolean>
-  }
-}
-*/
-
-// Union type inference
-const StatusSchema = Union([
-  Literal('active'),
-  Literal('inactive'),
-  Literal('pending')
-])
-
-type Status = TypeOf<typeof StatusSchema> // 'active' | 'inactive' | 'pending'
-```
-
-### Advanced Type Tools
-
-#### Conditional Type Inference
-
-```typescript
-// Extract optional fields
-type OptionalKeys<T> = {
-  [K in keyof T]: T[K] extends { __type: 'optional' } ? K : never
-}[keyof T]
-
-// Extract required fields
-type RequiredKeys<T> = Exclude<keyof T, OptionalKeys<T>>
-
-// Extract array element type
-type ArrayElement<T> = T extends List<infer U> ? TypeOf<U> : never
-```
-
-## Complete Example
-
-```typescript
-import {
-  ObjectType,
-  Struct,
-  String,
-  Int,
-  Float,
-  Boolean,
-  Date,
-  List,
-  Union,
-  Optional,
-  Nullable,
-  Literal,
-  pickStruct,
-  omitStruct,
-  partialStruct,
-  TypeOf,
-  SchemaCtor,
-  transform
-} from 'farrow-schema'
-
-// ===== Custom Validators =====
-const Email = SchemaCtor((input: unknown) => {
-  if (typeof input !== 'string') {
-    return { tag: 'fail', error: 'Expected string' }
-  }
-  
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input)) {
-    return { tag: 'fail', error: 'Invalid email format' }
-  }
-  
-  return { tag: 'success', output: input.toLowerCase() }
-})
-
-const Username = SchemaCtor((input: unknown) => {
-  if (typeof input !== 'string') {
-    return { tag: 'fail', error: 'Expected string' }
-  }
-  
-  if (input.length < 3 || input.length > 20) {
-    return { tag: 'fail', error: 'Username must be 3-20 characters' }
-  }
-  
-  if (!/^[a-zA-Z0-9_]+$/.test(input)) {
-    return { tag: 'fail', error: 'Username can only contain letters, numbers, and underscores' }
-  }
-  
-  return { tag: 'success', output: input }
-})
-
-// ===== Schema Definitions =====
-const UserRole = Union([
-  Literal('admin'),
-  Literal('user'),
-  Literal('moderator')
-])
-
-const UserSettings = Struct({
-  theme: Union([Literal('light'), Literal('dark')]),
-  notifications: Boolean,
-  language: String
-})
-
-const UserProfile = Struct({
-  firstName: String,
-  lastName: String,
-  bio: Optional(String),
-  avatar: Optional(String),
-  website: Optional(String),
-  location: Optional(String)
-})
-
-class User extends ObjectType {
-  id = Int
-  username = Username
-  email = Email
-  role = UserRole
-  profile = UserProfile
-  settings = UserSettings
-  tags = List(String)
-  isActive = Boolean
-  lastLoginAt = Nullable(Date)
+  email = String
+  role = Union([Literal('admin'), Literal('user')])
   createdAt = Date
   updatedAt = Date
 }
 
-// ===== Schema Operations =====
-const CreateUserRequest = pickStruct(User, [
-  'username',
-  'email',
-  'profile'
-])
+const CreateUserInput = omitObject(User, ['id', 'createdAt', 'updatedAt'])
+const UpdateUserInput = partial(omitObject(User, ['id', 'createdAt', 'updatedAt']))
 
-const UpdateUserRequest = partialStruct(
-  omitStruct(User, ['id', 'createdAt', 'updatedAt'])
+const APIResponse = <T extends Schema>(dataSchema: T) => Union(
+  Struct({
+    success: Literal(true),
+    data: dataSchema
+  }),
+  Struct({
+    success: Literal(false),
+    error: String,
+    code: Optional(Number)
+  })
 )
 
-const PublicUser = omitStruct(User, ['email'])
+type CreateUserInputType = TypeOf<typeof CreateUserInput>
+type UpdateUserInputType = TypeOf<typeof UpdateUserInput>
+type APIResponseType = TypeOf<typeof APIResponse>
+```
 
-const UserSummary = pickStruct(User, ['id', 'username', 'role', 'isActive'])
+### Configuration Validation
 
-// ===== Type Inference =====
-type UserType = TypeOf<typeof User>
-type CreateUserType = TypeOf<typeof CreateUserRequest>
-type UpdateUserType = TypeOf<typeof UpdateUserRequest>
-type PublicUserType = TypeOf<typeof PublicUser>
-
-// ===== Actual Usage =====
-const userData = {
-  username: 'alice_dev',
-  email: 'ALICE@EXAMPLE.COM', // Will be converted to lowercase
-  role: 'admin',
-  profile: {
-    firstName: 'Alice',
-    lastName: 'Johnson',
-    bio: 'Full-stack developer'
-  },
-  settings: {
-    theme: 'dark',
-    notifications: true,
-    language: 'en'
-  },
-  tags: ['typescript', 'react', 'nodejs'],
-  isActive: true,
-  lastLoginAt: null,
-  createdAt: new Date(),
-  updatedAt: new Date()
+```typescript
+// Application configuration
+class DatabaseConfig extends ObjectType {
+  host = String
+  port = new (NumberRange(1, 65535))()
+  database = String
+  username = String
+  password = String
+  ssl = Optional(Boolean)
+  timeout = Optional(new (NumberRange(1000, 60000))())
 }
 
-// Validate create user request
-const createResult = CreateUserRequest.safeParse({
-  username: 'alice_dev',
-  email: 'alice@example.com',
-  profile: {
-    firstName: 'Alice',
-    lastName: 'Johnson'
-  }
-})
-
-if (createResult.success) {
-  console.log('User data validation successful:', createResult.output)
-  // createResult.output is type-safe
-} else {
-  console.error('Validation failed:', createResult.error.message)
-  console.error('Error path:', createResult.error.path)
+class RedisConfig extends ObjectType {
+  host = String
+  port = new (NumberRange(1, 65535))()
+  password = Optional(String)
+  db = Optional(new (NumberRange(0, 15))())
 }
 
-// Validate update request (partial data)
-const updateResult = UpdateUserRequest.safeParse({
-  profile: {
-    bio: 'Senior full-stack developer'
-  },
-  settings: {
-    theme: 'light'
+class AppConfig extends ObjectType {
+  port = new (NumberRange(1, 65535))()
+  env = Union([
+    Literal('development'),
+    Literal('production'),
+    Literal('test')
+  ])
+  database = DatabaseConfig
+  redis = RedisConfig
+  cors = {
+    origin: Union([String, List(String)]),
+    credentials: Boolean
   }
-})
+}
 
-// Use in API
-import { Http, Response } from 'farrow-http'
-
-const app = Http()
-
-app.post('/users', {
-  body: CreateUserRequest
-}).use((request) => {
-  // request.body is validated and type-safe
-  const user = createUser(request.body)
-  return Response.status(201).json(user)
-})
-
-app.put('/users/<id:int>', {
-  body: UpdateUserRequest
-}).use((request) => {
-  // Both request.body and request.params are type-safe
-  const updated = updateUser(request.params.id, request.body)
-  return Response.json(updated)
-})
-
-app.get('/users/<id:int>').use((request) => {
-  const user = getUser(request.params.id)
-  if (!user) {
-    return Response.status(404).json({ error: 'User not found' })
+// Load and validate configuration
+function loadConfig(): TypeOf<typeof AppConfig> {
+  const configData = JSON.parse(fs.readFileSync('config.json', 'utf8'))
+  const result = Validator.validate(AppConfig, configData)
+  
+  if (result.isErr) {
+    throw new Error(`Invalid configuration: ${result.value.message}`)
   }
   
-  // Return public information (exclude sensitive fields)
-  const publicUserResult = PublicUser.safeParse(user)
-  return Response.json(publicUserResult.success ? publicUserResult.output : null)
-})
-
-// ===== Error Handling Example =====
-const invalidUser = {
-  username: 'ab', // Too short
-  email: 'not-an-email', // Invalid email
-  profile: {
-    firstName: '', // Empty string
-    // lastName missing
-  }
-}
-
-const result = CreateUserRequest.safeParse(invalidUser)
-if (!result.success) {
-  console.log('Detailed error information:')
-  result.error.issues.forEach(issue => {
-    console.log(`- ${issue.path.join('.')}: ${issue.message}`)
-  })
-  /*
-  Output:
-  - username: Username must be 3-20 characters
-  - email: Invalid email format  
-  - profile.firstName: String cannot be empty
-  - profile.lastName: Required field is missing
-  */
+  return result.value
 }
 ```
+
+---
 
 ## Best Practices
 
-### 1. Naming Conventions
+### 1. Use ObjectType for Structure Definition
 
 ```typescript
-// Recommended: Clear naming
-const UserCreateRequest = Struct({ ... })
-const UserUpdateRequest = partialStruct(User)
-const PublicUserResponse = omitStruct(User, ['password'])
-
-// Avoid: Ambiguous naming
-const UserData = Struct({ ... })
-const UserStuff = Struct({ ... })
-```
-
-### 2. Proper Use of Modifiers
-
-```typescript
-// Recommended: Clear semantics
+// ✅ Recommended: Use ObjectType
 class User extends ObjectType {
-  id = Int                    // Required field
-  email = Email              // Required field
-  bio = Optional(String)     // Optional field
-  deletedAt = Nullable(Date) // Nullable field (soft delete)
-}
-
-// Avoid: Excessive use of Optional
-class BadUser extends ObjectType {
-  id = Optional(Int)         // ID should be required
-  email = Optional(Email)    // Email is usually required
-}
-```
-
-### 3. Reuse and Composition
-
-```typescript
-// Recommended: Create reusable components
-const TimestampFields = {
-  createdAt: Date,
-  updatedAt: Date
-}
-
-const SoftDeleteFields = {
-  deletedAt: Nullable(Date)
-}
-
-class User extends ObjectType {
-  id = Int
+  id = String
   name = String
-  ...TimestampFields
-  ...SoftDeleteFields
+  email = String
 }
 
-class Post extends ObjectType {
-  id = Int
-  title = String
-  content = String
-  ...TimestampFields
-  ...SoftDeleteFields
-}
-```
-
-### 4. Progressive Validation
-
-```typescript
-// Recommended: From simple to complex
-const BasicUser = Struct({
+// ❌ Not recommended: Complex inline objects
+const User = Struct({
+  id: String,
   name: String,
-  email: String
-})
-
-const FullUser = intersectStruct([
-  BasicUser,
-  Struct({
-    profile: UserProfile,
-    settings: UserSettings,
-    permissions: List(String)
+  profile: Struct({
+    bio: String,
+    social: Struct({
+      twitter: String
+    })
   })
-])
+})
 ```
 
-### 5. Error Handling Strategy
+### 2. Proper Use of Union Types
 
 ```typescript
-// Recommended: Unified error handling
-function parseUserSafely(data: unknown): UserType | null {
-  const result = User.safeParse(data)
-  
-  if (result.success) {
-    return result.output
-  }
-  
-  // Log detailed errors for debugging
-  console.error('User validation failed:', {
-    issues: result.error.issues,
-    input: data
+// ✅ Recommended: Union types with discriminating fields
+const Event = Union(
+  Struct({
+    type: Literal('click'),
+    element: String
+  }),
+  Struct({
+    type: Literal('scroll'),
+    position: Number
   })
-  
-  return null
-}
-
-// Use in HTTP
-app.post('/users', {
-  body: User
-}, {
-  onSchemaError: (error, input) => {
-    // Return user-friendly error messages
-    return Response.status(400).json({
-      error: 'Invalid user data',
-      details: error.issues.map(issue => ({
-        field: issue.path.join('.'),
-        message: issue.message
-      }))
-    })
-  }
-})
+)
 ```
 
-## Summary
+### 3. Error Handling Patterns
 
-Congratulations! You've mastered the complete farrow-schema API:
+```typescript
+// ✅ Recommended: Unified error handling
+function processData(input: unknown): Result<ProcessedData, string> {
+  const validation = Validator.validate(DataSchema, input)
+  if (validation.isErr) {
+    return Err(`Validation failed: ${validation.value.message}`)
+  }
+  
+  // Business logic processing
+  try {
+    const processed = processBusinessLogic(validation.value)
+    return Ok(processed)
+  } catch (error) {
+    return Err(`Processing failed: ${error.message}`)
+  }
+}
+```
 
-- **Basic Types**: String, Int, Boolean and other basic building blocks
-- **Composite Types**: ObjectType, List, Union and other complex structures
-- **Modifiers**: Optional, Nullable, Strict and other type modifiers
-- **Utility Functions**: pickStruct, omitStruct and other Schema operation tools
-- **Validation System**: Type-safe validation and error handling
-- **Type Inference**: Complete TypeScript type support
+### 4. Type Extraction and Reuse
 
-Now you can build type-safe, maintainable data validation systems!
+```typescript
+// ✅ Recommended: Extract common types
+type UserType = TypeOf<typeof User>
+type CreateUserType = TypeOf<typeof CreateUserInput>
+
+// Use in functions
+function createUser(data: CreateUserType): Promise<UserType> {
+  // Implementation
+}
+```

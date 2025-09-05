@@ -315,9 +315,9 @@ app.get('/api/me').use(() => {
 
 ```typescript
 // 错误处理中间件
-app.use((request, next) => {
+app.use(async (request, next) => {
   try {
-    return next(request)
+    return await next(request)
   } catch (error) {
     console.error('Error:', error)
     

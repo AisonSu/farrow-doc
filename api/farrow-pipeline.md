@@ -1,165 +1,97 @@
-# farrow-pipeline API 参考
+# Farrow Pipeline 用户 API 参考
 
-farrow-pipeline 是一个强大的 Pipeline 和 Context 系统，提供类型安全的中间件管道和灵活的状态管理能力。
+## 概述
 
-## 安装
+Farrow Pipeline 是一个类型安全的中间件管道库，提供函数式编程风格的请求处理能力。
 
-```bash
-npm install farrow-pipeline
-```
+## 目录
 
-## Pipeline API
+- [快速开始](#快速开始)
+- [核心 API](#核心-api)
+  - [createPipeline](#createpipeline)
+  - [createAsyncPipeline](#createasyncpipeline)
+  - [usePipeline](#usepipeline)
+- [上下文管理](#上下文管理)
+  - [createContext](#createcontext)
+  - [Container 概念](#container-概念)
+  - [createContainer](#createcontainer)
+- [实用工具](#实用工具)
+  - [isPipeline](#ispipeline)
+- [错误处理](#错误处理)
+- [最佳实践](#最佳实践)
 
-### createPipeline()
+---
 
-创建一个类型安全的同步管道（Pipeline）。
+## 快速开始
 
 ```typescript
-function createPipeline<I, O>(options?: PipelineOptions): Pipeline<I, O>
+import { createPipeline, createContext } from 'farrow-pipeline'
+import * as asyncTracerImpl from 'farrow-pipeline/asyncTracerImpl.node'
 
-// 相关类型定义
-type PipelineOptions = {
+// Node.js 环境必需 - 启用异步追踪
+asyncTracerImpl.enable()
+
+// 创建 Pipeline
+const app = createPipeline<Request, Response>()
+
+app.use((req, next) => {
+  console.log(`${req.method} ${req.url}`)
+  return next(req)
+})
+
+app.use((req) => {
+  return { status: 200, body: 'Hello World' }
+})
+
+// 运行
+const response = app.run(request)
+```
+
+---
+
+## 核心 API
+
+### createPipeline
+
+创建一个类型安全的管道，用于处理请求流。
+
+```typescript
+function createPipeline<Input, Output>(options?: {
   contexts?: ContextStorage
-}
-
-type Pipeline<I = unknown, O = unknown> = {
-  use: (...inputs: MiddlewareInput<I, O>[]) => Pipeline<I, O>
-  run: (input: I, options?: RunPipelineOptions<I, O>) => O
-  middleware: Middleware<I, O>
-}
-
-type RunPipelineOptions<I = unknown, O = unknown> = {
-  container?: Container
-  onLast?: (input: I) => O
-}
+}): Pipeline<Input, Output>
 ```
 
-#### 参数
-
-- `options` (可选): Pipeline 配置选项
-  - `contexts`: 要注入到 Pipeline 的上下文存储
-
-#### 返回值
-
-返回 `Pipeline<I, O>` 对象：
-- `use(...middlewares)`: 添加中间件到管道，支持链式调用
-- `run(input, options?)`: 运行管道并返回结果
-- `middleware`: 将当前 Pipeline 作为中间件使用
-
-#### 示例
+**基础用法**
 
 ```typescript
-import { createPipeline } from 'farrow-pipeline'
-
-// 基础用法
 const pipeline = createPipeline<number, string>()
 
 pipeline.use((input, next) => {
-  console.log('前置处理:', input)
-  const result = next(input * 2)
-  console.log('后置处理:', result)
-  return result
+  // 前置处理
+  const processed = input * 2
+  return next(processed)
 })
 
 pipeline.use((input) => {
-  return `结果: ${input}`
+  // 最终处理
+  return `Result: ${input}`
 })
 
-const result = pipeline.run(5) // "结果: 10"
-
-// 嵌套 Pipeline
-const subPipeline = createPipeline<number, number>()
-subPipeline.use(x => x * 2)
-
-const mainPipeline = createPipeline<number, string>()
-mainPipeline.use(subPipeline.middleware)  // 作为中间件使用
-mainPipeline.use(x => `Result: ${x}`)
-
-mainPipeline.run(5) // "Result: 10"
+const result = pipeline.run(5) // "Result: 10"
 ```
 
-### createAsyncPipeline()
-
-创建支持异步操作和懒加载的管道。
+**链式调用**
 
 ```typescript
-function createAsyncPipeline<I, O>(options?: PipelineOptions): AsyncPipeline<I, O>
-
-// 相关类型定义
-type AsyncPipeline<I = unknown, O = unknown> = 
-  Pipeline<I, MaybeAsync<O>> & {
-    useLazy: (thunk: ThunkMiddlewareInput<I, O>) => AsyncPipeline<I, O>
-  }
-
-type MaybeAsync<T> = T | Promise<T>
-
-type ThunkMiddlewareInput<I, O> = 
-  () => MaybeAsync<MiddlewareInput<I, MaybeAsync<O>>>
+const app = createPipeline<Request, Response>()
+  .use(authMiddleware)
+  .use(loggerMiddleware)  
+  .use(routerMiddleware)
 ```
 
-#### 参数
-
-与 `createPipeline` 相同
-
-#### 返回值
-
-返回 `AsyncPipeline<I, O>`，除了 Pipeline 的所有方法外，还包含：
-- `useLazy(thunk)`: 懒加载中间件
-
-#### 示例
+**Pipeline 嵌套**
 
 ```typescript
-import { createAsyncPipeline } from 'farrow-pipeline'
-
-const pipeline = createAsyncPipeline<string, { data: any }>()
-
-// 异步中间件
-pipeline.use(async (input, next) => {
-  const user = await fetchUser(input)
-  return next(user.id)
-})
-
-// 懒加载中间件 - 按需加载大型依赖
-pipeline.useLazy(async () => {
-  const { processData } = await import('./heavy-processor')
-  return (data) => processData(data)
-})
-
-// 条件加载
-pipeline.useLazy(() => {
-  if (process.env.NODE_ENV === 'production') {
-    return import('./prod-middleware')
-  }
-  return import('./dev-middleware')
-})
-
-const result = await pipeline.run('user123')
-```
-
-### usePipeline()
-
-在另一个 Pipeline 的中间件中使用 Pipeline，自动继承当前的 Container。
-
-```typescript
-function usePipeline<I, O>(
-  pipeline: Pipeline<I, O>
-): (input: I, options?: RunPipelineOptions<I, O>) => O
-```
-
-#### 参数
-
-- `pipeline`: 要使用的 Pipeline 实例
-
-#### 返回值
-
-返回一个函数，该函数接收输入并运行 Pipeline，自动使用当前的 Container
-
-#### 示例
-
-```typescript
-import { usePipeline, createPipeline } from 'farrow-pipeline'
-
-// 子 Pipeline
 const validationPipeline = createPipeline<User, User>()
 validationPipeline.use((user) => {
   if (!user.email.includes('@')) {
@@ -168,667 +100,630 @@ validationPipeline.use((user) => {
   return user
 })
 
-// 主 Pipeline
-const mainPipeline = createPipeline<User, Result>()
+const mainPipeline = createPipeline<User, Response>()
+mainPipeline.use(validationPipeline) // 直接嵌套
+mainPipeline.use((user) => ({ status: 200, user }))
+```
 
-mainPipeline.use((user, next) => {
-  // 使用 usePipeline 运行子 Pipeline
-  const runValidation = usePipeline(validationPipeline)
-  
-  try {
-    const validatedUser = runValidation(user)
-    return next(validatedUser)
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
+---
+
+### createAsyncPipeline
+
+创建支持异步操作的管道，包含懒加载功能。
+
+```typescript
+function createAsyncPipeline<Input, Output>(options?: {
+  contexts?: ContextStorage
+}): AsyncPipeline<Input, Output>
+```
+
+**异步中间件**
+
+```typescript
+const pipeline = createAsyncPipeline<string, User>()
+
+pipeline.use(async (userId, next) => {
+  const user = await database.findUser(userId)
+  if (!user) throw new Error('User not found')
+  return next(user)
 })
 
-// 对比：使用 pipeline.middleware
-mainPipeline.use(validationPipeline.middleware)  // 更简洁但不能处理返回值
-```
-
-## Context API
-
-### createContext()
-
-创建一个可注入的上下文。
-
-```typescript
-function createContext<T>(defaultValue: T): Context<T>
-
-// 相关类型定义
-type Context<T = any> = {
-  id: symbol
-  create: (value: T) => Context<T>
-  get: () => T
-  set: (value: T) => void
-  assert: () => Exclude<T, undefined | null>
-}
-```
-
-#### 参数
-
-- `defaultValue`: 上下文的默认值
-
-#### 返回值
-
-返回 `Context<T>` 对象：
-- `id`: 唯一标识符
-- `create(value)`: 创建具有相同 id 但不同值的新 Context 实例
-- `get()`: 获取当前值
-- `set(value)`: 设置当前值
-- `assert()`: 断言值非空并返回
-
-#### Context.create 方法详解
-
-`create` 方法创建一个新的 Context 实例，保持相同的 `id` 但使用不同的值。
-
-**何时使用 create：**
-- 多环境配置 - 不同环境需要不同的初始值
-- 测试模拟 - 覆盖生产环境的默认值
-- 多租户系统 - 为不同用户提供不同配置
-- A/B 测试 - 同时运行多个配置变体
-
-**何时不需要 create：**
-- 只有一个 Pipeline 使用该 Context
-- Context 的默认值已经满足需求
-- 运行时通过 `set()` 修改值即可
-
-#### 示例
-
-```typescript
-import { createContext, createPipeline } from 'farrow-pipeline'
-
-// 1. 简单场景 - 不需要 create
-const CounterContext = createContext(0)
-
-const simplePipeline = createPipeline()  // 不传入 contexts
-
-simplePipeline.use((input) => {
-  const count = CounterContext.get()  // 使用默认值 0
-  CounterContext.set(count + 1)       // 运行时修改
-  return input
-})
-
-// 2. 测试场景 - 使用 create 覆盖
-const DatabaseContext = createContext<Database>(productionDB)
-
-const testPipeline = createPipeline({
-  contexts: {
-    db: DatabaseContext.create(mockDB)  // 覆盖为测试数据库
-  }
-})
-
-// 3. 多环境配置
-const LoggerContext = createContext<Logger>(consoleLogger)
-
-const environments = {
-  development: LoggerContext.create(verboseLogger),
-  production: LoggerContext.create(jsonLogger),
-  test: LoggerContext.create(silentLogger)
-}
-
-const pipeline = createPipeline({
-  contexts: {
-    logger: environments[process.env.NODE_ENV] || LoggerContext
-  }
-})
-```
-
-### createContainer()
-
-创建上下文容器来管理多个上下文。
-
-```typescript
-function createContainer(contexts?: ContextStorage): Container
-
-// 相关类型定义
-type ContextStorage = {
-  [key: string]: Context
-}
-
-type Container = {
-  read: <V>(context: Context<V>) => V
-  write: <V>(context: Context<V>, value: V) => void
-}
-```
-
-#### 参数
-
-- `contexts` (可选): 初始上下文存储
-
-#### 返回值
-
-返回 `Container` 对象：
-- `read(context)`: 读取上下文值
-- `write(context, value)`: 写入上下文值
-
-#### Container 生命周期
-
-1. **默认值回退**：未配置的 Context 自动使用 createContext 时的默认值
-2. **默认隔离**：每次 pipeline.run() 创建新的 Container 副本
-3. **显式共享**：通过 options.container 参数跨执行共享状态
-4. **异步安全**：基于 AsyncLocalStorage 维护正确的上下文
-5. **自动传递**：使用 pipeline.middleware 或 usePipeline 时继承父级 Container
-
-#### 示例
-
-```typescript
-import { createContainer, createContext } from 'farrow-pipeline'
-
-const UserContext = createContext({ id: '1', name: 'Alice' })
-const ThemeContext = createContext('light')
-
-// 创建容器
-const container = createContainer({
-  user: UserContext,
-  theme: ThemeContext.create('dark')  // 覆盖默认值
-})
-
-// 读写操作
-const user = container.read(UserContext)
-container.write(ThemeContext, 'blue')
-
-// 在 Pipeline 中使用容器
-pipeline.run(input, { container })
-```
-
-### useContainer()
-
-获取当前运行环境的容器。
-
-```typescript
-function useContainer(): Container
-```
-
-#### 返回值
-
-返回当前的 `Container` 实例
-
-#### 示例
-
-```typescript
-import { useContainer } from 'farrow-pipeline'
-
-// 自定义 Hook
-function useAuth() {
-  const container = useContainer()
-  const user = container.read(UserContext)
-  
-  if (!user) {
-    throw new Error('未授权')
-  }
-  
+pipeline.use(async (user) => {
+  await logActivity(user.id)
   return user
-}
-
-// 在中间件中使用
-pipeline.use((input, next) => {
-  const user = useAuth()
-  console.log(`已授权用户: ${user.name}`)
-  return next(input)
-})
-```
-
-## 中间件相关
-
-### Middleware 类型
-
-中间件函数类型定义。
-
-```typescript
-type Middleware<I = unknown, O = unknown> = (
-  input: I,
-  next: Next<I, O>
-) => O
-
-type Next<I = unknown, O = unknown> = (input?: I) => O
-
-type MiddlewareInput<I = unknown, O = unknown> = 
-  | Middleware<I, O> 
-  | { middleware: Middleware<I, O> }
-```
-
-## 工具函数
-
-### isPipeline()
-
-检查对象是否为 Pipeline。
-
-```typescript
-function isPipeline(input: any): input is Pipeline
-
-// 使用示例
-if (isPipeline(obj)) {
-  obj.run(input)  // TypeScript 知道 obj 是 Pipeline
-}
-```
-
-### isContext()
-
-检查对象是否为 Context。
-
-```typescript
-function isContext(input: any): input is Context
-
-// 使用示例
-if (isContext(obj)) {
-  const value = obj.get()  // TypeScript 知道 obj 是 Context
-}
-```
-
-### isContainer()
-
-检查对象是否为 Container。
-
-```typescript
-function isContainer(input: any): input is Container
-
-// 使用示例
-if (isContainer(obj)) {
-  obj.read(context)  // TypeScript 知道 obj 是 Container
-}
-```
-
-## 高级模式
-
-### 错误处理
-
-```typescript
-const pipeline = createPipeline<Request, Response>()
-
-// 错误边界中间件
-pipeline.use(async (req, next) => {
-  try {
-    return await next(req)
-  } catch (error) {
-    console.error('Pipeline 错误:', error)
-    return {
-      status: 500,
-      body: 'Internal Server Error'
-    }
-  }
-})
-```
-
-### 条件中间件
-
-```typescript
-const conditionalMiddleware = (condition: boolean) => {
-  return (input, next) => {
-    if (condition) {
-      console.log('条件满足，执行额外逻辑')
-    }
-    return next(input)
-  }
-}
-
-pipeline.use(conditionalMiddleware(process.env.NODE_ENV === 'development'))
-```
-
-### 组合多个 Pipeline
-
-```typescript
-// 方式1：使用 middleware 属性
-const validationPipeline = createPipeline<Data, Data>()
-const processingPipeline = createPipeline<Data, Data>()
-
-const mainPipeline = createPipeline<Data, Result>()
-mainPipeline
-  .use(validationPipeline.middleware)
-  .use(processingPipeline.middleware)
-  .use((data) => ({ success: true, data }))
-
-// 方式2：使用 usePipeline
-mainPipeline.use((data, next) => {
-  const runValidation = usePipeline(validationPipeline)
-  const runProcessing = usePipeline(processingPipeline)
-  
-  const validated = runValidation(data)
-  const processed = runProcessing(validated)
-  
-  return next(processed)
-})
-```
-
-### Context 模式
-
-#### 依赖注入
-
-```typescript
-// 定义服务接口
-interface Database {
-  query(sql: string): Promise<any>
-}
-
-interface Cache {
-  get(key: string): any
-  set(key: string, value: any): void
-}
-
-// 创建 Context
-const DatabaseContext = createContext<Database>()
-const CacheContext = createContext<Cache>()
-
-// 注入依赖
-app.use((request, next) => {
-  DatabaseContext.set(new PostgresDatabase())
-  CacheContext.set(new RedisCache())
-  return next(request)
 })
 
-// 使用依赖
-function useDatabase() {
-  const db = DatabaseContext.use()
-  return db
-}
-
-function useCache() {
-  const cache = CacheContext.use()
-  return cache
-}
+const user = await pipeline.run('user123')
 ```
 
-#### 请求追踪
-
-```typescript
-const RequestIdContext = createContext<string>()
-const TracingContext = createContext<{
-  spans: Array<{ name: string; duration: number }>
-}>()
-
-// 追踪中间件
-const tracing = (request, next) => {
-  const requestId = generateId()
-  RequestIdContext.set(requestId)
-  TracingContext.set({ spans: [] })
-  
-  const start = Date.now()
-  const response = next(request)
-  
-  const tracing = TracingContext.get()
-  console.log({
-    requestId,
-    duration: Date.now() - start,
-    spans: tracing?.spans
-  })
-  
-  return response
-}
-
-// 记录 span
-function trace<T>(name: string, fn: () => T): T {
-  const start = Date.now()
-  try {
-    return fn()
-  } finally {
-    const tracing = TracingContext.get()
-    if (tracing) {
-      tracing.spans.push({
-        name,
-        duration: Date.now() - start
-      })
-    }
-  }
-}
-
-// 使用
-app.get('/api/data').use(() => {
-  const data = trace('fetchData', () => fetchData())
-  const processed = trace('processData', () => processData(data))
-  return Response.json(processed)
-})
-```
-
-### 条件性 Pipeline
+**懒加载中间件**
 
 ```typescript
 const pipeline = createAsyncPipeline<Request, Response>()
 
-// 条件性中间件
-pipeline.use((request, next) => {
-  if (request.skipAuth) {
-    return next(request)
+// 按需加载重型依赖
+pipeline.useLazy(async () => {
+  const { imageProcessor } = await import('./heavy-image-lib')
+  return (req, next) => {
+    if (req.url.startsWith('/image')) {
+      const processed = imageProcessor(req)
+      return next(processed)
+    }
+    return next(req)
   }
-  
-  // 动态选择 Pipeline
-  const authPipeline = request.type === 'jwt'
-    ? jwtAuthPipeline
-    : sessionAuthPipeline
-  
-  const user = usePipeline(authPipeline)(request)
-  return next({ ...request, user })
 })
 
-// 动态加载
-pipeline.useLazy(async () => {
-  if (process.env.FEATURE_FLAG === 'enabled') {
-    const { featureMiddleware } = await import('./feature')
-    return featureMiddleware
+// 环境特定中间件
+pipeline.useLazy(() => {
+  if (process.env.NODE_ENV === 'development') {
+    return (req, next) => {
+      console.log('Dev mode:', req)
+      return next(req)
+    }
   }
-  
-  // 返回透传中间件
-  return (input, next) => next(input)
+  return (req, next) => next(req) // 生产环境跳过
 })
 ```
 
-## 完整示例
+---
+
+### usePipeline
+
+在中间件中运行另一个 Pipeline，自动继承当前的 Container（上下文容器）。
 
 ```typescript
-import {
-  createPipeline,
-  createAsyncPipeline,
-  createContext,
-  createContainer,
-  runWithContainer,
-  usePipeline
-} from 'farrow-pipeline'
+function usePipeline<Input, Output>(
+  pipeline: Pipeline<Input, Output>
+): (input: Input, options?: RunOptions) => Output
+```
 
-// ===== Context 定义 =====
+**为什么需要 usePipeline？**
+
+当你直接调用 `pipeline.run()` 时，会创建新的 Container，导致上下文丢失。`usePipeline` 确保子 Pipeline 继承当前的上下文状态。
+
+```typescript
 const UserContext = createContext<User | null>(null)
-const DatabaseContext = createContext<Database>()
-const LoggerContext = createContext<Logger>()
 
-// ===== Pipeline 定义 =====
-
-// 认证 Pipeline
-const authPipeline = createAsyncPipeline<string, User>()
-authPipeline.use(async (token, next) => {
-  const payload = jwt.verify(token, SECRET)
-  const user = await fetchUser(payload.userId)
+const authPipeline = createPipeline<Request, User>()
+authPipeline.use((req) => {
+  const user = authenticate(req)
+  UserContext.set(user) // 设置用户上下文
   return user
 })
 
-// 验证 Pipeline
-const validationPipeline = createPipeline<any, ValidatedData>()
-validationPipeline.use((data, next) => {
-  const result = validate(data)
-  if (!result.valid) {
-    throw new ValidationError(result.errors)
-  }
-  return next(result.data)
+const businessPipeline = createPipeline<User, Response>()
+businessPipeline.use((user) => {
+  // 这里能正确获取到用户上下文
+  const currentUser = UserContext.get()
+  return { status: 200, user: currentUser }
 })
 
-// 主 Pipeline
-const appPipeline = createAsyncPipeline<Request, Response>()
+const mainPipeline = createPipeline<Request, Response>()
 
-// 依赖注入中间件
-appPipeline.use(async (request, next) => {
-  const container = createContainer({
-    [DatabaseContext]: new Database(config.db),
-    [LoggerContext]: new Logger(request.id)
-  })
-  
-  return runWithContainer(() => next(request), container)
+// ❌ 错误用法 - 上下文会丢失
+mainPipeline.use((req, next) => {
+  const user = authPipeline.run(req) // 新建 Container
+  const response = businessPipeline.run(user) // 又是新的 Container
+  return response // UserContext.get() 在 businessPipeline 中可能为空
 })
 
-// 认证中间件
-appPipeline.use(async (request, next) => {
-  const token = request.headers.authorization
+// ✅ 正确用法 - 继承上下文
+mainPipeline.use((req, next) => {
+  const runAuth = usePipeline(authPipeline)
+  const runBusiness = usePipeline(businessPipeline)
   
-  if (token) {
-    const authenticate = usePipeline(authPipeline)
-    try {
-      const user = await authenticate(token)
-      UserContext.set(user)
-    } catch (error) {
-      return { status: 401, error: 'Invalid token' }
-    }
-  }
-  
-  return next(request)
+  const user = runAuth(req) // 继承当前 Container
+  const response = runBusiness(user) // 继承当前 Container
+  return response // 上下文正确传递
 })
+```
 
-// 延迟加载功能
-appPipeline.useLazy(async () => {
-  if (config.features.rateLimit) {
-    const { rateLimitMiddleware } = await import('./rate-limit')
-    return rateLimitMiddleware
-  }
-  return (input, next) => next(input)
-})
+**错误处理组合**
 
-// 业务处理
-appPipeline.use(async (request, next) => {
-  const db = DatabaseContext.use()
-  const logger = LoggerContext.use()
-  const user = UserContext.get()
-  
-  logger.info(`Processing request from ${user?.name || 'anonymous'}`)
+```typescript
+const validationPipeline = createPipeline<Data, Data>()
+const processingPipeline = createPipeline<Data, Result>()
+
+const mainPipeline = createPipeline<Data, Response>()
+
+mainPipeline.use((data, next) => {
+  const runValidation = usePipeline(validationPipeline)
+  const runProcessing = usePipeline(processingPipeline)
   
   try {
-    const validate = usePipeline(validationPipeline)
-    const data = validate(request.body)
-    
-    const result = await db.process(data)
-    
-    return {
-      status: 200,
-      data: result
-    }
+    const validated = runValidation(data)
+    const result = runProcessing(validated)
+    return { status: 200, result }
   } catch (error) {
-    logger.error('Processing failed:', error)
-    
-    if (error instanceof ValidationError) {
-      return {
-        status: 400,
-        error: error.message
-      }
+    return { status: 400, error: error.message }
+  }
+})
+```
+
+---
+
+## 上下文管理
+
+### createContext
+
+创建可在 Pipeline 间共享的上下文状态。Context 是 Farrow Pipeline 的核心特性，用于在中间件间传递状态。
+
+```typescript
+function createContext<T>(defaultValue: T): Context<T>
+```
+
+**Context 对象包含：**
+- `get()`: 获取当前值
+- `set(value)`: 设置当前值
+- `create(value)`: 创建具有不同初始值但 ID 相同的新 Context 实例
+- `assert()`: 断言值非空并返回
+
+**基础用法**
+
+```typescript
+const UserContext = createContext<User | null>(null)
+const RequestIdContext = createContext('')
+
+const pipeline = createPipeline<Request, Response>()
+
+pipeline.use((req, next) => {
+  // 设置上下文
+  const user = authenticate(req)
+  UserContext.set(user)
+  RequestIdContext.set(generateId())
+  
+  return next(req)
+})
+
+pipeline.use((req, next) => {
+  // 在任何后续中间件中获取上下文
+  const user = UserContext.get()
+  const requestId = RequestIdContext.get()
+  
+  console.log(`User: ${user?.name}, Request: ${requestId}`)
+  return next(req)
+})
+
+pipeline.use((req) => {
+  // 最终处理
+  const user = UserContext.get()
+  return { 
+    status: 200, 
+    body: `Hello, ${user?.name}!` 
+  }
+})
+```
+
+**上下文隔离**
+
+每次 `pipeline.run()` 都会创建独立的上下文，互不干扰：
+
+```typescript
+const CounterContext = createContext(0)
+
+const pipeline = createPipeline<string, string>()
+
+pipeline.use((input, next) => {
+  const count = CounterContext.get()
+  CounterContext.set(count + 1)
+  return next(`${input}:${CounterContext.get()}`)
+})
+
+// 并发执行，每个都有独立的计数器
+const results = await Promise.all([
+  pipeline.run('A'), // "A:1"
+  pipeline.run('B'), // "B:1" 
+  pipeline.run('C')  // "C:1"
+])
+```
+
+---
+
+### Container 概念
+
+**Container（容器）**是 Farrow Pipeline 的内部机制，用于管理 Context 的存储和隔离。理解 Container 概念有助于更好地使用 Context 和 Pipeline。
+
+**Container 的作用：**
+
+1. **状态隔离**：每次 `pipeline.run()` 创建独立的 Container
+2. **自动传递**：使用 `usePipeline` 时自动继承父 Container  
+3. **异步安全**：基于 AsyncLocalStorage 确保异步操作中上下文正确传递
+
+**Container 生命周期：**
+
+```typescript
+const UserContext = createContext<User | null>(null)
+
+// 创建 Pipeline 时可以预设 Context
+const pipeline = createPipeline<Request, Response>({
+  contexts: {
+    user: UserContext.create({ id: '1', name: 'Default User' })
+  }
+})
+
+pipeline.use((req) => {
+  // 读取预设的用户
+  const user = UserContext.get() // { id: '1', name: 'Default User' }
+  
+  // 运行时可以修改
+  UserContext.set({ id: '2', name: 'Logged In User' })
+  
+  return { user: UserContext.get() }
+})
+
+// 每次运行都从预设值开始，然后可以修改
+const result1 = pipeline.run(request1) // 从 Default User 开始
+const result2 = pipeline.run(request2) // 又从 Default User 开始
+```
+
+---
+
+### createContainer
+
+创建上下文容器来管理多个上下文。通常用于测试或特殊场景。
+
+```typescript
+function createContainer(contexts?: ContextStorage): Container
+```
+
+**测试场景使用**
+
+```typescript
+const DatabaseContext = createContext<Database>(productionDB)
+const LoggerContext = createContext<Logger>(consoleLogger)
+
+// 创建测试专用容器
+const testContainer = createContainer({
+  db: DatabaseContext.create(mockDatabase),
+  logger: LoggerContext.create(silentLogger)
+})
+
+// 在测试中使用特定容器
+const testResult = pipeline.run(testInput, { container: testContainer })
+```
+
+**多环境配置**
+
+```typescript
+const ConfigContext = createContext({ env: 'development' })
+
+const environments = {
+  development: createContainer({
+    config: ConfigContext.create({ env: 'development', debug: true })
+  }),
+  production: createContainer({
+    config: ConfigContext.create({ env: 'production', debug: false })
+  }),
+  test: createContainer({
+    config: ConfigContext.create({ env: 'test', debug: false })
+  })
+}
+
+const currentContainer = environments[process.env.NODE_ENV] || environments.development
+
+const result = pipeline.run(input, { container: currentContainer })
+```
+
+---
+
+## 实用工具
+
+### isPipeline
+
+检查对象是否为 Pipeline 实例。
+
+```typescript
+function isPipeline(obj: any): obj is Pipeline
+
+// 动态处理不同类型的处理器
+function handleRequest(handler: Pipeline | Function, input: any) {
+  if (isPipeline(handler)) {
+    return handler.run(input)
+  } else {
+    return handler(input)
+  }
+}
+```
+
+---
+
+## 错误处理
+
+### 同步错误处理
+
+```typescript
+const pipeline = createPipeline<Request, Response>()
+
+pipeline.use((req, next) => {
+  try {
+    validateRequest(req)
+    return next(req)
+  } catch (error) {
+    return {
+      status: 400,
+      error: error.message
     }
-    
+  }
+})
+```
+
+### 异步错误处理
+
+```typescript
+const pipeline = createAsyncPipeline<Request, Response>()
+
+pipeline.use(async (req, next) => {
+  try {
+    await validateRequestAsync(req)
+    return await next(req)
+  } catch (error) {
     return {
       status: 500,
       error: 'Internal server error'
     }
   }
 })
-
-// 运行应用
-async function handleRequest(request: Request) {
-  const response = await appPipeline.run(request)
-  return response
-}
-
-// 测试隔离
-async function testWithMocks() {
-  const container = createContainer({
-    [DatabaseContext]: new MockDatabase(),
-    [LoggerContext]: new ConsoleLogger()
-  })
-  
-  return runWithContainer(async () => {
-    const response = await appPipeline.run(testRequest)
-    return response
-  }, container)
-}
 ```
 
-## 最佳实践
-
-### 1. Context 命名
+### 全局错误边界
 
 ```typescript
-// 好：描述性命名
-const CurrentUserContext = createContext<User>()
-const DatabaseConnectionContext = createContext<Database>()
-const RequestTracingContext = createContext<Tracing>()
+const pipeline = createAsyncPipeline<Request, Response>()
 
-// 避免：通用命名
-const DataContext = createContext()
-const ConfigContext = createContext()
-```
+// 第一个中间件作为错误边界
+pipeline.use(async (req, next) => {
+  try {
+    return await next(req)
+  } catch (error) {
+    console.error('Pipeline error:', error)
+    
+    if (error.name === 'ValidationError') {
+      return { status: 400, error: error.message }
+    }
+    
+    if (error.name === 'AuthError') {
+      return { status: 401, error: 'Unauthorized' }
+    }
+    
+    return { status: 500, error: 'Internal server error' }
+  }
+})
 
-### 2. Pipeline 组合
-
-```typescript
-// 好：小而专注的 Pipeline
-const authPipeline = createPipeline()  // 只处理认证
-const validationPipeline = createPipeline()  // 只处理验证
-const loggingPipeline = createPipeline()  // 只处理日志
-
-// 组合使用
-const appPipeline = createPipeline()
-appPipeline.use((input, next) => {
-  const auth = usePipeline(authPipeline)
-  const validate = usePipeline(validationPipeline)
-  // ...
+// 业务中间件可以直接抛出错误
+pipeline.use(async (req) => {
+  if (!req.headers.authorization) {
+    const error = new Error('Missing authorization header')
+    error.name = 'AuthError'
+    throw error
+  }
+  // ... 处理逻辑
 })
 ```
 
-### 3. 错误处理
+---
+
+## 最佳实践
+
+### 1. 环境初始化
 
 ```typescript
-// 好：明确的错误处理
-pipeline.use((input, next) => {
-  try {
-    return next(input)
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      return handleValidationError(error)
+// app.ts - 应用启动文件
+import * as asyncTracerImpl from 'farrow-pipeline/asyncTracerImpl.node'
+
+// Node.js 环境必需
+asyncTracerImpl.enable()
+
+// 应用关闭时清理（可选）
+process.on('exit', () => {
+  asyncTracerImpl.disable()
+})
+```
+
+### 2. Context 设计原则
+
+```typescript
+// ✅ 好的做法 - 为不同职责创建专门的 Context
+const AuthContext = createContext<User | null>(null)
+const RequestContext = createContext<{ id: string, startTime: number }>()
+const ConfigContext = createContext<AppConfig>()
+
+// ❌ 避免 - 将无关数据混在一个 Context 中
+const GlobalContext = createContext<{ 
+  user?: User, 
+  config?: Config, 
+  temp?: any,
+  requestId?: string 
+}>()
+```
+
+### 3. Pipeline 组织
+
+```typescript
+// ✅ 按职责分离 Pipeline
+const authPipeline = createPipeline<Request, AuthenticatedRequest>()
+const validationPipeline = createPipeline<Data, ValidatedData>()
+const businessPipeline = createPipeline<ValidatedData, Result>()
+
+// 主 Pipeline 负责组合
+const mainPipeline = createPipeline<Request, Response>()
+  .use((req, next) => {
+    const runAuth = usePipeline(authPipeline)
+    const runValidation = usePipeline(validationPipeline) 
+    const runBusiness = usePipeline(businessPipeline)
+    
+    const authReq = runAuth(req)
+    const validatedData = runValidation(authReq.data)
+    const result = runBusiness(validatedData)
+    
+    return { status: 200, result }
+  })
+```
+
+### 4. 错误处理前置
+
+```typescript
+// ✅ 将错误处理放在管道前面
+const pipeline = createAsyncPipeline<Request, Response>()
+  .use(errorBoundaryMiddleware)    // 第一个中间件
+  .use(validationMiddleware)       // 验证逻辑
+  .use(authenticationMiddleware)   // 认证逻辑
+  .use(businessLogicMiddleware)    // 业务逻辑（可以安全抛出错误）
+```
+
+### 5. 类型优先设计
+
+```typescript
+// ✅ 先定义清晰的接口
+interface ApiRequest {
+  path: string
+  method: string
+  headers: Record<string, string>
+  body?: any
+}
+
+interface ApiResponse {
+  status: number
+  headers?: Record<string, string>
+  data?: any
+  error?: string
+}
+
+// 然后创建类型安全的 Pipeline
+const apiPipeline = createPipeline<ApiRequest, ApiResponse>()
+
+// TypeScript 会确保类型安全
+apiPipeline.use((req, next) => {
+  // req 自动推断为 ApiRequest 类型
+  // next 的返回值必须是 ApiResponse 类型
+  return next(req)
+})
+```
+
+### 6. 条件中间件模式
+
+```typescript
+const createConditionalMiddleware = <T>(
+  condition: boolean | ((input: T) => boolean),
+  middleware: Middleware<T>
+) => {
+  return (input: T, next: Next<T>) => {
+    const shouldExecute = typeof condition === 'function' 
+      ? condition(input) 
+      : condition
+      
+    if (shouldExecute) {
+      return middleware(input, next)
     }
-    throw error  // 重新抛出未知错误
+    return next(input)
+  }
+}
+
+// 使用示例
+pipeline.use(
+  createConditionalMiddleware(
+    process.env.NODE_ENV === 'development',
+    debugMiddleware
+  )
+)
+
+pipeline.use(
+  createConditionalMiddleware(
+    (req) => req.url.startsWith('/api'),
+    apiMiddleware
+  )
+)
+```
+
+---
+
+## 常见问题
+
+**Q: 为什么 Context 在异步操作中丢失？**
+
+A: 确保启用了 AsyncTracer：
+
+```typescript
+import * as asyncTracerImpl from 'farrow-pipeline/asyncTracerImpl.node'
+asyncTracerImpl.enable() // 必需
+
+// 现在异步操作中 Context 会自动传递
+pipeline.use(async (input, next) => {
+  UserContext.set(user)
+  
+  await delay(1000) // 异步等待
+  
+  const user = UserContext.get() // 正确获取到用户
+  return next(input)
+})
+```
+
+**Q: 何时使用 usePipeline 而不是直接嵌套？**
+
+A: 当你需要处理子 Pipeline 的返回值或错误时使用 `usePipeline`：
+
+```typescript
+// 简单嵌套 - 推荐
+mainPipeline.use(subPipeline)
+
+// 需要处理返回值 - 使用 usePipeline  
+mainPipeline.use((input, next) => {
+  const runSubPipeline = usePipeline(subPipeline)
+  
+  try {
+    const result = runSubPipeline(input)
+    // 对结果做额外处理
+    return next(processResult(result))
+  } catch (error) {
+    // 错误处理
+    return handleError(error)
   }
 })
 ```
 
-### 4. 类型安全
+**Q: Pipeline 可以重复使用吗？**
+
+A: 可以，每次 `run()` 都是独立执行：
 
 ```typescript
-// 好：明确的类型定义
-const pipeline = createPipeline<
-  { userId: string; data: unknown },
-  { success: boolean; result?: any; error?: string }
->()
+const pipeline = createPipeline<number, number>()
+pipeline.use(x => x + 1)
 
-// Context 带默认值
-const ThemeContext = createContext<'light' | 'dark'>('light')
+// 多次使用同一个 Pipeline
+const result1 = pipeline.run(1) // 2
+const result2 = pipeline.run(5) // 6
+
+// 并发执行也是安全的
+await Promise.all([
+  pipeline.run(1),
+  pipeline.run(2), 
+  pipeline.run(3)
+])
 ```
 
-### 5. 生命周期管理
+**Q: 浏览器环境如何使用？**
+
+A: 浏览器环境不支持异步上下文追踪，需要避免在异步操作中依赖 Context：
 
 ```typescript
-// 好：合理的 Context 生命周期
-const pipeline = createAsyncPipeline<Request, Response>()
+// 浏览器中使用
+const pipeline = createPipeline<Request, Response>()
 
-pipeline.use(async (request, next) => {
-  // 为每个请求创建新的上下文
-  const container = createContainer({
-    [RequestIdContext]: generateId(),
-    [TimestampContext]: Date.now()
-  })
-  
-  return runWithContainer(() => next(request), container)
+// ✅ 同步使用 Context
+pipeline.use((req, next) => {
+  UserContext.set(req.user)
+  return next(req)
+})
+
+// ❌ 异步中可能丢失 Context  
+pipeline.use(async (req, next) => {
+  await fetchData()
+  const user = UserContext.get() // 可能为空
+  return next(req)
+})
+
+// ✅ 手动传递数据而不依赖 Context
+pipeline.use(async (req, next) => {
+  const data = await fetchData()
+  return next({ ...req, data })
 })
 ```
-
-## 总结
-
-恭喜！您已经掌握了 farrow-pipeline 的完整 API：
-
-- **Pipeline 系统**: 类型安全的中间件管道
-- **Context 系统**: 灵活的状态管理和依赖注入
-- **异步支持**: 完整的 Promise 和异步中间件支持
-- **工具函数**: 丰富的类型检查和开发工具
-- **高级模式**: 复杂场景下的最佳实践
-
-现在可以构建高质量、可维护的中间件系统了！

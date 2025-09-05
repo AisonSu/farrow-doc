@@ -1,214 +1,242 @@
 # Farrow 深度教程
 
-> 探索 Farrow 框架的高级特性与深层用法
+> 深入掌握 Farrow 框架的高级特性和 API
 
 ## 概述
 
-在掌握了 Farrow 的基础用法后，本教程将带你深入了解框架的高级特性。我们将学习：
+本教程将深入介绍 Farrow 框架的高级功能和 API，帮助你充分利用框架的能力。
 
-- farrow-pipeline：Pipeline 组合、Context 隔离、延迟加载
-- farrow-schema：手动验证、自定义验证器、Schema 转换
-- farrow-http：响应拦截、自定义响应、响应合并
+**学习目标：**
+- 掌握 farrow-pipeline 的高级 API
+- 了解 farrow-schema 的扩展功能  
+- 熟悉 farrow-http 的完整特性
+- 理解各模块的设计思路
+
+## 目录
+
+### farrow-pipeline 高级特性
+- [Container：理解上下文隔离](#container理解上下文隔离)
+- [usePipeline：保持 Container 继承](#usepipeline保持-container-继承)
+- [AsyncPipeline.useLazy：延迟加载](#asyncpipelineuselazy延迟加载)
+
+### farrow-schema 高级特性
+- [Validator.validate：手动验证](#validatorvalidate手动验证)
+- [ValidatorType：自定义验证器](#validatortype自定义验证器)
+
+### farrow-http 高级特性
+- [Response.capture：全局响应拦截](#responsecapture全局响应拦截)
+- [Response.custom：底层响应控制](#responsecustom底层响应控制)
+- [Http 构造选项：高级配置](#http-构造选项高级配置)
+- [Router 高级特性](#router-高级特性)
+- [错误边界与错误恢复](#错误边界与错误恢复)
+- [高级中间件模式](#高级中间件模式)
 
 ---
 
 ## farrow-pipeline 高级特性
 
-### usePipeline - Pipeline 的组合与复用
+### Container：理解上下文隔离
 
-`usePipeline` 允许你在一个 Pipeline 的中间件中调用另一个 Pipeline，实现模块化和复用。
+在深入了解 `usePipeline` 之前，我们需要理解 Farrow 的 Container 概念。
 
-#### 基础用法
+#### 什么是 Container？
+
+Container（容器）是 Farrow 用来管理 Context 存储和隔离的内部机制。每次调用 `pipeline.run()` 时，都会创建一个新的 Container，其中包含了该次执行的所有 Context 状态。
 
 ```typescript
-import { createPipeline, usePipeline } from 'farrow-pipeline'
+import { createPipeline, createContext } from 'farrow-pipeline'
 
-// 创建独立的 Pipeline
-const validationPipeline = createPipeline<UserInput, ValidatedUser>()
-validationPipeline.use((input, next) => {
-  if (!input.email?.includes('@')) {
-    throw new Error('Invalid email')
-  }
-  return next({ ...input, validated: true })
+const UserContext = createContext<{ name: string } | null>(null)
+
+const pipeline = createPipeline<void, string>()
+
+pipeline.use((input, next) => {
+  UserContext.set({ name: '张三' })
+  console.log('设置用户:', UserContext.get()) // { name: '张三' }
+  return next('处理完成')
 })
 
-const transformPipeline = createPipeline<ValidatedUser, ProcessedUser>()
-transformPipeline.use((input, next) => {
-  return next({
-    ...input,
-    email: input.email.toLowerCase(),
-    createdAt: new Date()
-  })
+// 每次 run 都创建新的 Container
+pipeline.run() // Container A: UserContext = { name: '张三' }
+pipeline.run() // Container B: UserContext = { name: '张三' }（独立的容器）
+```
+
+#### Container 的隔离特性
+
+不同的 Pipeline 执行之间是完全隔离的：
+
+```typescript
+const pipeline1 = createPipeline<void, void>()
+const pipeline2 = createPipeline<void, void>()
+
+pipeline1.use((input, next) => {
+  UserContext.set({ name: 'Alice' })
+  console.log('Pipeline1 用户:', UserContext.get()) // { name: 'Alice' }
+  return next()
 })
 
-// 主 Pipeline 组合其他 Pipeline
-const mainPipeline = createPipeline<UserInput, Result>()
+pipeline2.use((input, next) => {
+  console.log('Pipeline2 用户:', UserContext.get()) // null（不同的 Container）
+  return next()
+})
+
+pipeline1.run() // 在 Container A 中执行
+pipeline2.run() // 在 Container B 中执行，无法访问 Container A 的状态
+```
+
+### usePipeline：保持 Container 继承
+
+现在我们理解了 Container 隔离的问题，`usePipeline` 的意义就很明确了：它允许子 Pipeline 继承当前的 Container，而不是创建新的。
+
+#### 问题演示：为什么需要 usePipeline？
+
+```typescript
+const UserContext = createContext<{ id: string } | null>(null)
+
+const authPipeline = createPipeline<{ token: string }, { userId: string }>()
+authPipeline.use((input, next) => {
+  const userId = validateToken(input.token)
+  UserContext.set({ id: userId }) // 设置用户上下文
+  return next({ userId })
+})
+
+const dataPipeline = createPipeline<{ userId: string }, { data: any }>()
+dataPipeline.use((input, next) => {
+  const user = UserContext.get() // 尝试获取用户上下文
+  console.log('当前用户:', user) // 这里会输出什么？
+  return next({ data: 'some data' })
+})
+
+const mainPipeline = createPipeline<{ token: string }, { data: any }>()
+
+// ❌ 错误方式：直接调用 run()
 mainPipeline.use((input, next) => {
-  // 使用 usePipeline 获取可调用的函数
-  const validate = usePipeline(validationPipeline)
-  const transform = usePipeline(transformPipeline)
+  const authResult = authPipeline.run(input)    // 创建新 Container A
+  const dataResult = dataPipeline.run(authResult) // 创建新 Container B
+  
+  // dataPipeline 中的 UserContext.get() 返回 null！
+  // 因为 Container B 中没有 UserContext 的状态
+  
+  return next(dataResult)
+})
+```
+
+#### usePipeline 的解决方案
+
+```typescript
+// ✅ 正确方式：使用 usePipeline
+mainPipeline.use((input, next) => {
+  const runAuth = usePipeline(authPipeline)  // 继承当前 Container
+  const runData = usePipeline(dataPipeline)  // 继承当前 Container
+  
+  const authResult = runAuth(input)    // 在当前 Container 中执行
+  const dataResult = runData(authResult) // 在同一 Container 中执行
+  
+  // dataPipeline 中的 UserContext.get() 能正确获取到用户信息！
+  
+  return next(dataResult)
+})
+
+// 完整示例
+const completeExample = createPipeline<{ token: string }, string>()
+completeExample.use((input, next) => {
+  console.log('主流程开始')
+  
+  const runAuth = usePipeline(authPipeline)
+  const runData = usePipeline(dataPipeline)
   
   try {
-    const validated = validate(input)
-    const processed = transform(validated)
-    return next({ success: true, data: processed })
+    const authResult = runAuth(input)
+    console.log('认证完成，用户ID:', authResult.userId)
+    
+    const dataResult = runData(authResult)
+    console.log('数据获取完成')
+    
+    return next('处理成功')
   } catch (error) {
-    return { success: false, error: error.message }
+    return next('处理失败: ' + error.message)
   }
 })
 ```
 
-#### 条件性 Pipeline 执行
+### Container：手动创建和管理
+
+除了自动创建的 Container，你也可以手动创建和管理 Container。
+
+#### 创建和使用 Container
 
 ```typescript
-const processingPipeline = createPipeline<Request, Response>()
+import { createContainer, createContext } from 'farrow-pipeline'
 
-processingPipeline.use((request, next) => {
-  // 根据条件选择不同的处理流程
-  const pipeline = request.type === 'batch' 
-    ? usePipeline(batchPipeline)
-    : usePipeline(singlePipeline)
-  
-  const result = pipeline(request.data)
-  return next(result)
+const DatabaseContext = createContext<Database>(defaultDB)
+const ConfigContext = createContext<Config>(defaultConfig)
+
+// 创建专用容器
+const testContainer = createContainer({
+  db: DatabaseContext.create(mockDatabase),
+  config: ConfigContext.create(testConfig)
 })
+
+// 在特定容器中运行
+const result = pipeline.run(input, { container: testContainer })
 ```
 
-### Container 与 runWithContainer - 上下文隔离
-
-Container 提供了请求级的上下文隔离，确保并发请求之间的数据不会相互干扰。
-
-#### 创建隔离的执行环境
+#### 多环境配置示例
 
 ```typescript
-import { createContainer, runWithContainer, createContext } from 'farrow-pipeline'
-
-// 定义 Context
-const UserContext = createContext<User | null>(null)
-const DatabaseContext = createContext<Database | null>(null)
-const LoggerContext = createContext<Logger>(defaultLogger)
-
-// 为每个请求创建独立的执行环境
-function handleRequest(requestData: RequestData) {
-  // 创建请求专属的 Container
-  const container = createContainer({
-    [UserContext]: requestData.user,
-    [DatabaseContext]: createDatabaseConnection(requestData.tenantId),
-    [LoggerContext]: createLogger(requestData.requestId)
+const environments = {
+  development: createContainer({
+    db: DatabaseContext.create(devDB),
+    config: ConfigContext.create(devConfig)
+  }),
+  production: createContainer({
+    db: DatabaseContext.create(prodDB),
+    config: ConfigContext.create(prodConfig)
+  }),
+  test: createContainer({
+    db: DatabaseContext.create(mockDB),
+    config: ConfigContext.create(testConfig)
   })
-  
-  // 在 Container 环境中执行业务逻辑
-  return runWithContainer(() => {
-    // 这里的所有 Context 访问都是隔离的
-    const user = UserContext.get()
-    const db = DatabaseContext.get()
-    const logger = LoggerContext.get()
-    
-    logger.info(`Processing request for user: ${user?.id}`)
-    return processBusinessLogic(db, user)
-  }, container)
 }
+
+const currentContainer = environments[process.env.NODE_ENV] || environments.development
+const result = pipeline.run(input, { container: currentContainer })
 ```
 
-#### 嵌套 Container
+### AsyncPipeline.useLazy：延迟加载
 
-```typescript
-const parentPipeline = createPipeline<Input, Output>()
-
-parentPipeline.use((input, next) => {
-  // 父级设置
-  ConfigContext.set({ env: 'production' })
-  
-  // 创建子 Container，继承并扩展父级环境
-  const childContainer = createContainer({
-    [ConfigContext]: { ...ConfigContext.get(), feature: 'enabled' }
-  })
-  
-  // 在子 Container 中运行，修改不影响父级
-  const result = runWithContainer(() => {
-    return processInIsolation(input)
-  }, childContainer)
-  
-  return next(result)
-})
-```
-
-### AsyncPipeline.useLazy - 延迟加载
-
-`useLazy` 允许延迟加载中间件，优化启动时间和内存使用。
-
-#### 同步延迟加载
+`useLazy` 允许延迟加载中间件，适用于条件性或重型依赖。
 
 ```typescript
 import { createAsyncPipeline } from 'farrow-pipeline'
 
 const pipeline = createAsyncPipeline<Request, Response>()
 
-// 延迟加载重量级中间件
-pipeline.useLazy(() => {
-  // 这个函数只在第一次使用时执行
-  console.log('Loading heavy middleware...')
-  const heavyDependency = loadHeavyDependency()
+// 延迟加载中间件
+pipeline.useLazy(async () => {
+  // 只有在实际需要时才加载
+  const heavyLibrary = await import('heavy-library')
   
-  return (input, next) => {
-    const processed = heavyDependency.process(input)
-    return next(processed)
+  return async (input, next) => {
+    if (shouldUseHeavyLibrary(input)) {
+      const result = await heavyLibrary.process(input)
+      return { ...input, processed: result }
+    }
+    return next(input)
   }
 })
 
 // 条件性加载
-pipeline.useLazy(() => {
-  if (process.env.FEATURE_FLAG === 'enabled') {
-    return featureMiddleware
+pipeline.useLazy(async () => {
+  const feature = await getFeatureFlag('advanced-processing')
+  
+  if (feature.enabled) {
+    const processor = await import('./advanced-processor')
+    return processor.middleware
   }
+  
   // 返回透传中间件
   return (input, next) => next(input)
-})
-```
-
-#### 异步模块加载
-
-```typescript
-const apiPipeline = createAsyncPipeline<ApiRequest, ApiResponse>()
-
-// 异步加载外部模块
-apiPipeline.useLazy(async () => {
-  // 动态导入，只在需要时加载
-  const { processPayment } = await import('./payment-processor')
-  
-  return async (request, next) => {
-    if (request.type === 'payment') {
-      const result = await processPayment(request.data)
-      return { type: 'payment', result }
-    }
-    return next(request)
-  }
-})
-
-// 并行加载多个中间件
-apiPipeline.useLazy(async () => {
-  const [auth, rateLimit, cache] = await Promise.all([
-    import('./middleware/auth'),
-    import('./middleware/rate-limit'),
-    import('./middleware/cache')
-  ])
-  
-  return (request, next) => {
-    if (!auth.validate(request)) {
-      return { error: 'Unauthorized' }
-    }
-    
-    if (!rateLimit.check(request)) {
-      return { error: 'Rate limit exceeded' }
-    }
-    
-    const cached = cache.get(request)
-    if (cached) return cached
-    
-    const response = next(request)
-    cache.set(request, response)
-    return response
-  }
 })
 ```
 
@@ -216,262 +244,192 @@ apiPipeline.useLazy(async () => {
 
 ## farrow-schema 高级特性
 
-### Validator.validate - 手动验证
+### Validator.validate：手动验证
 
-`Validator.validate` 允许你在任何地方手动验证数据，不仅限于 HTTP 路由。
-
-#### 基础用法
+除了自动验证外，可以手动使用 Validator 进行数据验证。
 
 ```typescript
 import { Validator } from 'farrow-schema/validator'
-import { ObjectType, String, Number, Optional } from 'farrow-schema'
+import { ObjectType, String, Number } from 'farrow-schema'
 
-// 定义 Schema
-class UserInput extends ObjectType {
+class User extends ObjectType {
   name = String
   age = Number
-  email = String
-  bio = Optional(String)
 }
 
-// 手动验证数据
-const data = { name: 'John', age: 25, email: 'john@example.com' }
-const result = Validator.validate(UserInput, data)
+// 手动验证
+const result = Validator.validate(User, {
+  name: "张三",
+  age: 25
+})
 
 if (result.isOk) {
-  // 验证成功，result.value 是类型安全的数据
-  console.log('Valid data:', result.value)
-  // result.value 的类型：{ name: string; age: number; email: string; bio?: string }
+  console.log('验证成功:', result.value)
 } else {
-  // 验证失败，result.value 包含错误信息
-  console.error('Validation error:', result.value.message)
-  console.error('Error path:', result.value.path)
+  console.log('验证失败:', result.value.message)
 }
 ```
 
-#### 在业务逻辑中使用
+#### 批量验证
 
 ```typescript
-// 处理表单数据
-function processForm(input: unknown) {
-  const result = Validator.validate(UserInput, input)
+function validateBatch<T>(schema: any, dataList: unknown[]): {
+  valid: T[]
+  invalid: Array<{ index: number, error: string, data: unknown }>
+} {
+  const results = dataList.map((data, index) => ({
+    index,
+    data,
+    result: Validator.validate(schema, data)
+  }))
   
-  if (result.isErr) {
-    throw new Error(`Validation failed at ${result.value.path?.join('.')}: ${result.value.message}`)
-  }
-  
-  // 此时 result.value 是类型安全的
-  return saveToDatabase(result.value)
-}
-
-// 批量验证
-function validateBatch(items: unknown[]): { valid: any[], invalid: any[] } {
-  const results = items.map(item => Validator.validate(UserInput, item))
-  
-  const valid = results
-    .filter(r => r.isOk)
-    .map(r => r.value)
-  
-  const invalid = results
-    .filter(r => r.isErr)
-    .map((r, index) => ({
-      index,
-      error: r.value.message,
-      path: r.value.path
+  return {
+    valid: results.filter(r => r.result.isOk).map(r => r.result.value),
+    invalid: results.filter(r => r.result.isErr).map(r => ({
+      index: r.index,
+      error: r.result.value.message,
+      data: r.data
     }))
-  
-  return { valid, invalid }
+  }
 }
-
-// 验证嵌套数据
-class OrderSchema extends ObjectType {
-  orderId = String
-  user = UserInput  // 嵌套 Schema
-  items = List({
-    productId: String,
-    quantity: Number,
-    price: Number
-  })
-}
-
-const orderData = {
-  orderId: 'ORD-001',
-  user: { name: 'John', age: 25, email: 'john@example.com' },
-  items: [
-    { productId: 'P1', quantity: 2, price: 99.99 }
-  ]
-}
-
-const orderResult = Validator.validate(OrderSchema, orderData)
 ```
 
-### 自定义 ValidatorType
+### ValidatorType：自定义验证器
 
-通过继承 `ValidatorType`，你可以创建自定义的验证逻辑。
-
-#### 创建自定义验证器
+创建自定义验证逻辑的验证器。
 
 ```typescript
-import { ValidatorType } from 'farrow-schema/validator'
-import { Validator } from 'farrow-schema'
+import { ValidatorType, Validator } from 'farrow-schema/validator'
 
-// 邮箱验证器
 class EmailType extends ValidatorType<string> {
   validate(input: unknown) {
-    // 先验证基础类型
     const stringResult = Validator.validate(String, input)
     if (stringResult.isErr) {
-      return this.Err('Email must be a string')
+      return this.Err('必须是字符串')
     }
     
-    const email = stringResult.value.trim().toLowerCase()
-    
-    // 验证邮箱格式
+    const email = stringResult.value
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    
     if (!emailRegex.test(email)) {
-      return this.Err('Invalid email format')
+      return this.Err('邮箱格式不正确')
     }
     
-    // 返回处理后的值
     return this.Ok(email)
   }
 }
 
-// 带参数的验证器
-class RangeType extends ValidatorType<number> {
-  constructor(
-    private min: number,
-    private max: number
-  ) {
+// 使用自定义验证器
+class UserSchema extends ObjectType {
+  email = new EmailType()
+  name = String
+}
+```
+
+#### 参数化验证器
+
+```typescript
+class StringLengthType extends ValidatorType<string> {
+  constructor(private min: number, private max: number) {
     super()
   }
   
   validate(input: unknown) {
-    // 先验证是否为数字
-    const numberResult = Validator.validate(Number, input)
-    if (numberResult.isErr) {
-      return numberResult  // 直接返回错误
+    const result = Validator.validate(String, input)
+    if (result.isErr) return result
+    
+    const str = result.value
+    if (str.length < this.min || str.length > this.max) {
+      return this.Err(`长度必须在 ${this.min}-${this.max} 之间`)
     }
     
-    const value = numberResult.value
-    if (value < this.min || value > this.max) {
-      return this.Err(`Value must be between ${this.min} and ${this.max}`)
-    }
-    
-    return this.Ok(value)
+    return this.Ok(str)
   }
 }
 
-// 使用自定义验证器
-class UserProfile extends ObjectType {
-  email = EmailType  // 使用自定义邮箱验证器
-  age = new RangeType(0, 150)
-  score = new RangeType(0, 100)
+// 工厂函数
+const StringLength = (min: number, max: number) => new StringLengthType(min, max)
+
+class Article extends ObjectType {
+  title = StringLength(5, 100)
+  content = StringLength(50, 5000)
 }
 ```
 
-#### 验证器工厂模式
+---
 
-```typescript
-// 创建可复用的验证器工厂
-function StringPattern(pattern: RegExp, message: string) {
-  return class extends ValidatorType<string> {
-    validate(input: unknown) {
-      const stringResult = Validator.validate(String, input)
-      if (stringResult.isErr) {
-        return this.Err('Must be a string')
-      }
-      
-      if (!pattern.test(stringResult.value)) {
-        return this.Err(message)
-      }
-      
-      return this.Ok(stringResult.value)
-    }
-  }
-}
-
-// 使用工厂创建具体验证器
-const UsernameType = StringPattern(
-  /^[a-zA-Z0-9_]{3,20}$/,
-  'Username must be 3-20 characters, alphanumeric and underscore only'
-)
-
-const PhoneType = StringPattern(
-  /^\+?[1-9]\d{10,14}$/,
-  'Invalid phone number format'
-)
-
-const SlugType = StringPattern(
-  /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-  'Slug must be lowercase alphanumeric with hyphens'
-)
-
-// 组合使用
-class ContactForm extends ObjectType {
-  username = UsernameType
-  phone = PhoneType
-  slug = SlugType
-}
-```
 ## farrow-http 高级特性
 
-### Response.capture - 响应拦截
+### Response.capture：全局响应拦截
 
-`capture` 允许你拦截特定类型的响应并进行统一处理。
+`capture` 允许你拦截和转换特定类型的响应，实现全局的响应格式统一。
 
-#### 统一响应格式
+#### 基本响应拦截
 
 ```typescript
-// 拦截所有 JSON 响应
-app.capture('json', (jsonBody, response) => {
-  const statusCode = response.info.status?.code || 200
-  
-  // 统一成功响应格式
-  if (statusCode < 400) {
-    return Response.json({
-      success: true,
-      data: jsonBody.value,
-      meta: {
-        timestamp: Date.now(),
-        version: 'v1'
-      }
-    }).merge(response)  // 保留原响应的其他属性
-  }
-  
-  // 统一错误响应格式
+import { Http, Response } from 'farrow-http'
+
+const app = Http()
+
+// 拦截所有 JSON 响应，统一格式
+app.capture('json', (jsonBody) => {
   return Response.json({
-    success: false,
-    error: jsonBody.value,
-    meta: {
-      timestamp: Date.now(),
-      statusCode
-    }
-  }).merge(response)
+    success: true,
+    data: jsonBody.value,
+    timestamp: new Date().toISOString(),
+    version: 'v1'
+  })
 })
 
-// 拦截文本响应添加字符集
-app.capture('text', (textBody, response) => {
-  return response.header('Content-Type', 'text/plain; charset=utf-8')
-})
-
-// 拦截 HTML 响应
-app.capture('html', (htmlBody, response) => {
-  const html = htmlBody.value
-  // 注入分析脚本
-  const modified = html.replace(
-    '</head>',
-    '<script>console.log("Page loaded")</script></head>'
-  )
-  return Response.html(modified).merge(response)
+// 现在所有的 JSON 响应都会被自动包装
+app.get('/users').use(() => {
+  return Response.json({ users: ['Alice', 'Bob'] })
+  // 实际响应：
+  // {
+  //   "success": true,
+  //   "data": { "users": ["Alice", "Bob"] },
+  //   "timestamp": "2024-01-01T00:00:00.000Z",
+  //   "version": "v1"
+  // }
 })
 ```
 
-### Response.custom - 自定义响应
+#### 多种响应类型拦截
 
-`Response.custom` 让你直接操作 Node.js 的原生请求和响应对象。
+```typescript
+// 拦截文件响应，添加缓存头
+app.capture('file', (fileBody) => {
+  return Response.file(fileBody.value, fileBody.options)
+    .header('Cache-Control', 'public, max-age=31536000')
+    .header('X-Served-By', 'Farrow-HTTP')
+})
 
-#### Server-Sent Events (SSE)
+// 拦截 HTML 响应，注入安全头
+app.capture('html', (htmlBody) => {
+  return Response.html(htmlBody.value)
+    .header('X-Content-Type-Options', 'nosniff')
+    .header('X-Frame-Options', 'DENY')
+    .header('Content-Security-Policy', "default-src 'self'")
+})
+
+// 拦截文本响应
+app.capture('text', (textBody) => {
+  return Response.text(textBody.value)
+    .header('X-Content-Type', 'text/plain')
+})
+
+// 拦截重定向响应
+app.capture('redirect', (redirectBody) => {
+  return Response.redirect(redirectBody.url, redirectBody.options)
+    .header('X-Redirect-Reason', 'API-Redirect')
+})
+```
+
+### Response.custom：底层响应控制
+
+`Response.custom` 提供了对 Node.js 原生 `req` 和 `res` 对象的直接访问，用于实现标准响应类型无法满足的需求。
+
+#### Server-Sent Events (SSE) 实现
 
 ```typescript
 app.get('/events').use(() => {
@@ -480,290 +438,412 @@ app.get('/events').use(() => {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
     })
     
     // 发送初始连接事件
     res.write('event: connected\n')
-    res.write('data: {"status": "connected"}\n\n')
+    res.write(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
     
-    // 定期发送数据
-    let counter = 0
+    // 定时发送数据
     const interval = setInterval(() => {
-      counter++
-      res.write(`event: message\n`)
-      res.write(`data: {"count": ${counter}}\n`)
-      res.write(`id: ${counter}\n\n`)
-      
-      if (counter >= 10) {
-        clearInterval(interval)
-        res.end()
-      }
+      res.write('event: heartbeat\n')
+      res.write(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
     }, 1000)
     
-    // 客户端断开时清理
+    // 清理连接
     req.on('close', () => {
+      clearInterval(interval)
+      console.log('SSE connection closed')
+    })
+    
+    req.on('error', (err) => {
+      console.error('SSE error:', err)
       clearInterval(interval)
     })
   })
 })
 ```
 
-#### 文件流式传输
+#### 长轮询实现
 
 ```typescript
-import { createReadStream } from 'fs'
-import { pipeline } from 'stream'
+const pendingRequests = new Map()
 
-app.get('/download/<file:string>').use((request) => {
-  const filename = request.params.file
+app.get('/poll/<channelId:string>').use((request) => {
+  const { channelId } = request.params
+  const timeout = parseInt(request.query.timeout) || 30000
   
-  return Response.custom(({ res }) => {
-    const stream = createReadStream(`./uploads/${filename}`)
-    
-    // 设置下载响应头
-    res.setHeader('Content-Type', 'application/octet-stream')
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
-    
-    // 流式传输
-    pipeline(stream, res, (err) => {
-      if (err) {
-        console.error('Stream error:', err)
-        if (!res.headersSent) {
-          res.statusCode = 500
-          res.end('Stream error')
-        }
-      }
-    })
-    
-    // 文件不存在处理
-    stream.on('error', () => {
-      if (!res.headersSent) {
-        res.statusCode = 404
-        res.end('File not found')
-      }
-    })
-  })
-})
-```
-
-### Response.merge - 响应合并
-
-`Response.merge` 用于合并多个响应对象的属性。
-
-```typescript
-// 创建响应增强函数
-function withCors(response: Response): Response {
-  const corsHeaders = Response
-    .header('Access-Control-Allow-Origin', '*')
-    .header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE')
-    .header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-  
-  return Response.merge(response, corsHeaders)
-}
-
-function withCache(response: Response, maxAge: number): Response {
-  const cacheHeaders = Response
-    .header('Cache-Control', `public, max-age=${maxAge}`)
-    .header('Expires', new Date(Date.now() + maxAge * 1000).toUTCString())
-  
-  return Response.merge(response, cacheHeaders)
-}
-
-// 使用响应增强
-app.get('/api/data').use(() => {
-  const data = Response.json({ items: [] })
-  
-  // 链式增强
-  const enhanced = withCache(withCors(data), 3600)
-  return enhanced
-})
-
-// 在中间件中合并响应
-app.use((request, next) => {
-  const startTime = Date.now()
-  const response = next(request)
-  
-  // 添加性能追踪头
-  const tracking = Response
-    .header('X-Response-Time', `${Date.now() - startTime}ms`)
-    .header('X-Server', 'Farrow')
-  
-  return Response.merge(response, tracking)
-})
-```
-
----
-
-## 实战案例：综合应用
-
-让我们综合运用这些高级特性构建一个完整的示例。
-
-```typescript
-import { Http, Response } from 'farrow-http'
-import { createAsyncPipeline, createContext, createContainer, runWithContainer } from 'farrow-pipeline'
-import { ObjectType, ValidatorType, Validator } from 'farrow-schema'
-
-// === 自定义验证器 ===
-class StrongPasswordType extends ValidatorType<string> {
-  validate(input: unknown) {
-    const stringResult = Validator.validate(String, input)
-    if (stringResult.isErr) {
-      return this.Err('Password must be a string')
-    }
-    
-    const password = stringResult.value
-    
-    if (password.length < 8) {
-      return this.Err('Password must be at least 8 characters')
-    }
-    
-    if (!/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
-      return this.Err('Password must contain uppercase, lowercase and numbers')
-    }
-    
-    return this.Ok(password)
-  }
-}
-
-// === Schema 定义 ===
-class RegisterRequest extends ObjectType {
-  username = String
-  email = String
-  password = StrongPasswordType
-}
-
-// === Context 定义 ===
-const RequestIdContext = createContext<string>('')
-const UserContext = createContext<User | null>(null)
-
-// === 处理 Pipeline ===
-const authPipeline = createAsyncPipeline<AuthRequest, AuthResponse>()
-
-// 延迟加载认证模块
-authPipeline.useLazy(async () => {
-  const { authenticate } = await import('./auth')
-  
-  return async (request, next) => {
-    const result = await authenticate(request)
-    if (!result.success) {
-      return { success: false, error: 'Authentication failed' }
-    }
-    return next({ ...request, user: result.user })
-  }
-})
-
-// === 主应用 ===
-const app = Http()
-
-// 请求追踪中间件
-app.use((request, next) => {
-  const requestId = generateRequestId()
-  
-  // 创建请求级 Container
-  const container = createContainer({
-    [RequestIdContext]: requestId
-  })
-  
-  return runWithContainer(() => {
-    const startTime = Date.now()
-    const response = next(request)
-    
-    // 添加追踪头
-    return response
-      .header('X-Request-ID', requestId)
-      .header('X-Response-Time', `${Date.now() - startTime}ms`)
-  }, container)
-})
-
-// 统一响应格式
-app.capture('json', (jsonBody, response) => {
-  const requestId = RequestIdContext.get()
-  
-  return Response.json({
-    requestId,
-    timestamp: Date.now(),
-    ...jsonBody.value
-  }).merge(response)
-})
-
-// 注册接口
-app.post('/register', {
-  body: RegisterRequest
-}).use(async (request) => {
-  // 手动验证额外的业务规则
-  const usernameCheck = await checkUsernameExists(request.body.username)
-  if (usernameCheck) {
-    return Response.status(400).json({ error: 'Username already exists' })
-  }
-  
-  // 使用 Pipeline 处理
-  const authResult = await authPipeline.run({
-    type: 'register',
-    data: request.body
-  })
-  
-  if (!authResult.success) {
-    return Response.status(400).json({ error: authResult.error })
-  }
-  
-  return Response.status(201).json({
-    user: authResult.user,
-    token: authResult.token
-  })
-})
-
-// SSE 通知接口
-app.get('/notifications').use(() => {
   return Response.custom(({ req, res }) => {
-    const requestId = RequestIdContext.get()
-    const user = UserContext.get()
+    const requestId = Math.random().toString(36)
     
-    if (!user) {
-      res.writeHead(401)
-      res.end('Unauthorized')
+    // 检查是否有立即可用的数据
+    const immediateData = checkForData(channelId)
+    if (immediateData) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: immediateData }))
       return
     }
     
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'X-Request-ID': requestId
-    })
+    // 保存待处理的请求
+    pendingRequests.set(requestId, { res, channelId })
     
-    // 订阅用户通知
-    const unsubscribe = subscribeToUserNotifications(user.id, (notification) => {
-      res.write(`event: notification\n`)
-      res.write(`data: ${JSON.stringify(notification)}\n\n`)
-    })
+    // 设置超时
+    const timer = setTimeout(() => {
+      pendingRequests.delete(requestId)
+      res.writeHead(204) // No Content
+      res.end()
+    }, timeout)
     
+    // 客户端断开连接时清理
     req.on('close', () => {
-      unsubscribe()
+      clearTimeout(timer)
+      pendingRequests.delete(requestId)
     })
   })
 })
 
-app.listen(3000)
+// 当有新数据时通知所有等待的请求
+function notifyChannel(channelId: string, data: any) {
+  for (const [requestId, { res, channelId: reqChannelId }] of pendingRequests) {
+    if (reqChannelId === channelId) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data }))
+      pendingRequests.delete(requestId)
+    }
+  }
+}
+```
+
+#### 分块传输实现
+
+```typescript
+app.get('/large-data').use(() => {
+  return Response.custom(({ req, res }) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Transfer-Encoding': 'chunked'
+    })
+    
+    // 开始 JSON 数组
+    res.write('{"items":[')
+    
+    let first = true
+    const totalItems = 10000
+    
+    // 分批处理大量数据
+    function sendBatch(startIndex: number) {
+      const batchSize = 100
+      const endIndex = Math.min(startIndex + batchSize, totalItems)
+      
+      for (let i = startIndex; i < endIndex; i++) {
+        if (!first) res.write(',')
+        first = false
+        
+        res.write(JSON.stringify({
+          id: i,
+          data: `Item ${i}`,
+          timestamp: Date.now()
+        }))
+      }
+      
+      if (endIndex < totalItems) {
+        // 异步处理下一批
+        setImmediate(() => sendBatch(endIndex))
+      } else {
+        // 结束 JSON 数组
+        res.write(']}')
+        res.end()
+      }
+    }
+    
+    sendBatch(0)
+  })
+})
+```
+
+### Http 构造选项：高级配置
+
+#### basenames：路由前缀
+
+```typescript
+// 支持多个 basename
+const app = Http({
+  basenames: ['/api', '/v1', '/app']
+})
+
+// 这个路由会匹配多个路径：
+// /api/users, /v1/users, /app/users
+app.get('/users').use(() => Response.json({ users: [] }))
+```
+
+#### logger：自定义日志
+
+```typescript
+const app = Http({
+  logger: false  // 禁用默认日志
+})
+
+// 或者自定义日志
+const app = Http({
+  logger: {
+    info: (message) => console.log(`INFO: ${message}`),
+    warn: (message) => console.warn(`WARN: ${message}`),
+    error: (message) => console.error(`ERROR: ${message}`)
+  }
+})
+```
+
+### Router 高级特性
+
+#### Router.match：模式匹配
+
+```typescript
+import { Router } from 'farrow-http'
+import { String, Literal } from 'farrow-schema'
+
+const router = Router()
+
+// 使用 match 进行复杂匹配
+router.match({
+  url: '/admin/<path+:string>',  // 一个或多个路径段
+  method: ['GET', 'POST']  // 只匹配 GET 和 POST
+}).use((request, next) => {
+  // 管理员路由的预处理
+  const user = UserContext.get()
+  if (!user || user.role !== 'admin') {
+    return Response.status(403).json({ error: 'Admin required' })
+  }
+  
+  // 可以访问路径参数
+  const adminPath = request.params.path  // string[] 类型
+  console.log('Admin accessing:', adminPath.join('/'))
+  
+  return next(request)
+})
+
+// 复杂匹配条件 - headers 使用 Schema
+router.match({
+  url: '/api/<segments*:string>',  // 零个或多个路径段
+  headers: {
+    'content-type': Literal('application/json')  // 使用 Schema 定义
+  }
+}).use((request, next) => {
+  // 只处理 JSON 请求
+  const apiSegments = request.params.segments  // string[] | undefined 类型
+  console.log('API path segments:', apiSegments)
+  
+  return next(request)
+})
+
+// 更复杂的匹配示例
+router.match({
+  url: '/api/<version:string>/users',  // 匹配任意版本路径段
+  method: ['POST', 'PUT'],
+  headers: {
+    'authorization': String,  // 必需的认证头
+    'content-type': Literal('application/json')
+  },
+  body: {
+    name: String,
+    email: String
+  }
+}).use((request, next) => {
+  // 所有条件都满足才会执行到这里
+  const { version } = request.params  // string 类型
+  const { authorization } = request.headers
+  const { name, email } = request.body
+  
+  console.log('API version:', version)
+  return next(request)
+})
+
+// 如果需要匹配特定版本值，使用 Literal 联合类型
+router.post('/api/<version:v1|v2>/users', {
+  headers: {
+    'authorization': String,
+    'content-type': Literal('application/json')
+  },
+  body: {
+    name: String,
+    email: String
+  }
+}).use((request, next) => {
+  // 这里可以获取类型安全的路由参数
+  const { version } = request.params  // 'v1' | 'v2' 类型
+  const { authorization } = request.headers
+  const { name, email } = request.body
+  
+  return next(request)
+})
+```
+
+#### Router.use 的高级用法
+
+```typescript
+const router = Router()
+
+// 路径匹配的中间件
+router.use('/public/<path*:string>', (request, next) => {
+  // 只对 /public/* 路径生效的中间件
+  return next(request)
+})
+
+// 方法过滤 - 在中间件内部判断
+router.use((request, next) => {
+  // 只对写操作生效的中间件
+  if (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH') {
+    // 执行写操作相关的逻辑
+    console.log('Processing write operation:', request.method)
+  }
+  return next(request)
+})
+
+// 组合条件 - 使用 match 进行复合匹配
+router.match({
+  url: '/api/v2/<path*:string>',
+  method: 'POST',
+  headers: { 'authorization': String }
+}).use((request, next) => {
+  // 复合条件匹配
+  return next(request)
+})
+```
+
+### 错误边界与错误恢复
+
+#### onSchemaError：Schema 错误处理
+
+```typescript
+// 全局 Schema 错误处理
+app.match({
+  url: '/<path*:string>'  // 匹配所有路径
+}, {
+  onSchemaError: (error, request, next) => {
+    console.error('Schema validation failed:', error)
+    
+    return Response.status(400).json({
+      error: 'Validation Error',
+      details: {
+        path: error.path?.join('.'),
+        message: error.message,
+        received: typeof error.value
+      }
+    })
+  }
+})
+
+// 特定路由的 Schema 错误处理
+app.post('/users', {
+  body: { email: String, password: String }
+}, {
+  onSchemaError: (error, request, next) => {
+    if (error.path?.includes('email')) {
+      return Response.status(400).json({
+        error: 'Invalid email address'
+      })
+    }
+    
+    if (error.path?.includes('password')) {
+      return Response.status(400).json({
+        error: 'Password is required'
+      })
+    }
+    
+    return Response.status(400).json({
+      error: 'Invalid request data'
+    })
+  }
+}).use((request) => {
+  // 处理有效请求
+  return Response.json({ success: true })
+})
+```
+
+### 高级中间件模式
+
+#### 条件中间件
+
+```typescript
+const conditionalMiddleware = (condition: (req: any) => boolean, middleware: any) => {
+  return (request, next) => {
+    if (condition(request)) {
+      return middleware(request, next)
+    }
+    return next(request)
+  }
+}
+
+// 使用示例
+app.use(
+  conditionalMiddleware(
+    req => req.method === 'POST',
+    rateLimitMiddleware
+  )
+)
+
+app.use(
+  conditionalMiddleware(
+    req => req.headers['x-debug'] === 'true',
+    debugMiddleware
+  )
+)
+```
+
+#### 异步中间件组合
+
+```typescript
+const asyncMiddleware = (...middlewares) => {
+  return async (request, next) => {
+    // 顺序执行异步中间件
+    let modifiedRequest = request
+    
+    for (const middleware of middlewares) {
+      const result = await middleware(modifiedRequest, (req) => req)
+      modifiedRequest = result
+    }
+    
+    return next(modifiedRequest)
+  }
+}
+
+// 使用
+app.use(asyncMiddleware(
+  loadUserMiddleware,
+  loadPermissionsMiddleware,
+  loadPreferencesMiddleware
+))
 ```
 
 ---
 
 ## 总结
 
-本教程深入介绍了 Farrow 框架的高级特性：
+本教程介绍了 Farrow 框架的主要高级特性：
 
 ### farrow-pipeline
-- **usePipeline**：实现 Pipeline 的模块化组合
-- **Container**：提供请求级的上下文隔离
-- **useLazy**：优化性能的延迟加载机制
+- **usePipeline**: 保持上下文的 Pipeline 组合
+- **Container**: 上下文隔离和管理
+- **useLazy**: 延迟加载中间件
 
 ### farrow-schema
-- **Validator.validate**：手动验证数据的核心 API
-- **ValidatorType**：创建自定义验证器的基类
-- **required**：Schema 转换工具函数
+- **Validator.validate**: 手动数据验证
+- **ValidatorType**: 自定义验证器
 
 ### farrow-http
-- **Response.capture**：统一处理特定类型的响应
-- **Response.custom**：直接操作原生对象实现特殊功能
-- **Response.merge**：灵活组合响应属性
+- **Response.capture**: 响应类型拦截
+- **Response.custom**: 底层响应控制
+- **Router.route**: 嵌套路由
 
-这些高级特性让你能够构建更加复杂、高效和可维护的应用。
+这些特性为构建复杂应用提供了强大的基础能力。
+
+---
+
+## 下一步
+
+📚 **[API 参考](/api/)**  
+查阅完整的 API 文档
+
+🚀 **[实战示例](/examples/)**  
+通过具体项目学习实践技巧
