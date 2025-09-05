@@ -102,7 +102,8 @@ app.listen(3000)
 
 ### 社区工具
 
-- **[farrow-auth](https://github.com/AisonSu/farrow-auth)** - 认证解决方案
+- **[farrow-auth-session](https://github.com/AisonSu/farrow-auth-session)** - Session 认证解决方案
+- **[farrow-auth-jwt](https://github.com/AisonSu/farrow-auth-jwt)** - JWT 认证解决方案
 
 </div>
 

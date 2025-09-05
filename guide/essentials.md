@@ -34,8 +34,6 @@ app.delete('/posts')    // DELETE 请求
 app.head('/posts')      // HEAD 请求
 app.options('/posts')   // OPTIONS 请求
 
-// 处理所有方法
-app.all('/posts')       // 匹配所有 HTTP 方法
 ```
 
 ### 路由参数

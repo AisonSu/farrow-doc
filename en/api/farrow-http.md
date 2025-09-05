@@ -1,32 +1,50 @@
-# Farrow HTTP API Reference
+# Farrow HTTP User API Reference
 
 ## Overview
 
 Farrow HTTP is a TypeScript-first Web framework that provides type-safe routing and automatic validation features. Built on the farrow-pipeline middleware system and farrow-schema validation system, it offers powerful functionality with an excellent developer experience.
 
-## Quick Navigation
+## Table of Contents
 
-### Getting Started
-- [Installation and Quick Start](#installation-and-quick-start) - Get started in 5 minutes
-- [Basic Examples](#basic-examples) - Common code templates
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+  - [RequestInfo - Request Information Object](#requestinfo---request-information-object)
+- [Server Creation](#server-creation)
+  - [Http - HTTP Server](#http---http-server)
+  - [Https - HTTPS Server](#https---https-server)
+- [Routing System](#routing-system)
+  - [HTTP Method Routes](#http-method-routes)
+  - [Route Patterns and Auto-validation](#route-patterns-and-auto-validation)
+  - [Advanced Route Matching](#advanced-route-matching)
+- [Response Construction](#response-construction)
+  - [Basic Response Types](#basic-response-types)
+    - [JSON Response](#json-response)
+    - [Text Response](#text-response)
+    - [HTML Response](#html-response)
+    - [File Response](#file-response)
+    - [Stream Response](#stream-response)
+    - [Redirect Response](#redirect-response)
+    - [Custom Response](#custom-response)
+  - [Response Operations](#response-operations)
+    - [Response Methods](#response-methods-chainable)
+    - [Response Merging](#response-merging)
+    - [Response Interception](#response-interception)
+- [Middleware System](#middleware-system)
+  - [Middleware Execution Model](#middleware-execution-model)
+  - [Middleware Types](#middleware-types)
+- [Router and Modularity](#router-and-modularity)
+  - [Router - Standalone Router](#router---standalone-router)
+  - [Nested Routes](#nested-routes)
+  - [Static File Service](#static-file-service)
+- [Context Management](#context-management)
+  - [Context](#context)
+  - [Context Hooks](#context-hooks)
+- [Error Handling](#error-handling)
+  - [HttpError Class](#httperror-class)
+  - [Global Error Handling](#global-error-handling)
+- [Testing Support](#testing-support)
 
-### Core API
-- [Server Creation](#server-creation) - Http(), Https(), configuration options
-- [Route Definition](#route-definition) - get(), post(), match() etc.
-- [Response Construction](#response-construction) - Response objects and methods
-- [Middleware](#middleware) - use(), onion model, error handling
-
-### Advanced Features  
-- [Router System](#router-system) - Router(), route(), modular
-- [Context Management](#context-management) - Context, hooks, request isolation
-- [Static Files](#static-files) - serve(), security protection
-- [Testing Support](#testing) - Test configuration and examples
-
-### Reference
-- [API Quick Reference](#api-quick-reference) - Quick lookup for common methods  
-- [Complete Examples](#complete-examples) - Production-ready application code
-
-## Installation and Quick Start
+## Quick Start
 
 ### Installation
 
@@ -169,9 +187,63 @@ app.listen(3000)
 
 ---
 
+## Core Concepts
+
+### RequestInfo - Request Information Object
+
+The core of farrow-http is the `RequestInfo` object, which contains all parsed request data:
+
+```typescript
+type RequestInfo = {
+  readonly pathname: string         // Path name, e.g. "/users/123"
+  readonly method?: string          // HTTP method, e.g. "GET", "POST"
+  readonly query?: RequestQuery     // Query parameters, e.g. { page: 1, limit: 10 }
+  readonly body?: any              // Request body, parsed and validated
+  readonly headers?: RequestHeaders // Request headers, e.g. { authorization: "Bearer token" }
+  readonly cookies?: RequestCookies // Cookies, e.g. { sessionId: "abc123" }
+  readonly params?: RequestParams   // Path parameters, e.g. { id: 123 } (from /users/<id:int>)
+}
+
+type RequestQuery = { readonly [key: string]: any }
+type RequestHeaders = { readonly [key: string]: any }
+type RequestCookies = { readonly [key: string]: any }
+type RequestParams = { readonly [key: string]: any }
+```
+
+**RequestInfo Features:**
+
+- **Type Safety**: All fields have explicit type definitions
+- **Read-only Properties**: Uses `readonly` to prevent accidental data modification
+- **Auto-parsing**: Path parameters, query parameters, request body etc. are automatically validated and type-converted according to route definitions
+- **Consistency**: RequestInfo provides a unified request data access interface throughout the middleware chain
+
+**RequestInfo Usage in Middleware:**
+
+```typescript
+// Middleware function signature
+type Middleware = (req: RequestInfo, next: Next) => MaybeAsyncResponse
+
+// Practical usage example
+app.get('/users/<id:int>?<page?:int>').use((req) => {
+  // req.pathname: string - "/users/123"
+  // req.method: string - "GET"  
+  // req.params.id: number - 123 (validated as integer)
+  // req.query.page: number | undefined - optional page parameter
+  
+  return Response.json({
+    userId: req.params.id,
+    page: req.query.page || 1
+  })
+})
+```
+
+---
+
 ## Server Creation
 
-### `Http(options?: HttpPipelineOptions): HttpPipeline`
+### Http - HTTP Server
+
+#### `Http(options?: HttpPipelineOptions): HttpPipeline`
 
 Creates an HTTP server instance with comprehensive configuration options.
 
@@ -253,11 +325,9 @@ type BodyOptions = {
 }
 ```
 
----
+### Https - HTTPS Server
 
-## HTTPS Server
-
-### `Https(options?: HttpsPipelineOptions): HttpPipeline`
+#### `Https(options?: HttpsPipelineOptions): HttpPipeline`
 
 Creates an HTTPS server with TLS/SSL configuration.
 
@@ -278,7 +348,7 @@ app.listen(443)
 
 ---
 
-## Route Definition
+## Routing System
 
 ### HTTP Method Routes
 
@@ -319,10 +389,6 @@ http.options('/users', () => {
     .empty()
 })
 
-// Match all methods
-http.all('/catch-all', (req) => {
-  return Response.json({ method: req.method })
-})
 ```
 
 ### Advanced Route Matching
@@ -562,7 +628,9 @@ type ValidationError = {
 
 ## Response Construction
 
-### JSON Response
+### Basic Response Types
+
+#### JSON Response
 
 ```typescript
 // Simple JSON
@@ -582,14 +650,14 @@ Response
   .json({ data: [] })
 ```
 
-### Text Response
+#### Text Response
 
 ```typescript
 Response.text('Plain text response')
 Response.status(404).text('Not found')
 ```
 
-### HTML Response
+#### HTML Response
 
 ```typescript
 Response.html('<h1>Hello World</h1>')
@@ -601,7 +669,7 @@ Response.status(200).html(`
 `)
 ```
 
-### File Response
+#### File Response
 
 Creates file responses with support for streaming and range requests.
 
@@ -625,7 +693,7 @@ Response.file('./report.pdf')
   .header('Cache-Control', 'private, max-age=3600')
 ```
 
-### Stream Response
+#### Stream Response
 
 ```typescript
 import { Readable } from 'stream'
@@ -634,7 +702,7 @@ const stream = Readable.from(['Hello', ' ', 'World'])
 Response.stream(stream)
 ```
 
-### Redirect Response
+#### Redirect Response
 
 ```typescript
 Response.redirect('/login')
@@ -651,13 +719,13 @@ apiRouter.use(() => {
 })
 ```
 
-### Empty Response
+#### Empty Response
 
 ```typescript
 Response.status(204).empty()
 ```
 
-### Custom Response
+#### Custom Response
 
 Creates custom responses for direct Node.js response operations.
 
@@ -697,7 +765,9 @@ Response.custom(({ req, res }) => {
 })
 ```
 
-### Response Methods (Chainable)
+### Response Operations
+
+#### Response Methods (Chainable)
 
 ```typescript
 // Status and headers
@@ -758,7 +828,7 @@ Response.file('./document.pdf').attachment('document.pdf', {
 })
 ```
 
-### Response Type Checking
+#### Response Type Checking
 
 ```typescript
 // Response.is() checks response content type
@@ -772,7 +842,7 @@ htmlResponse.is('html')    // Returns: 'html'
 htmlResponse.is('text', 'html') // Returns matching type or false
 ```
 
-### Response Merging
+#### Response Merging
 
 ```typescript
 // Important: Response.merge follows "last wins" principle
@@ -805,13 +875,63 @@ const result = Response.json({ users: [] }).header('X-Version', 'v1')
 
 ---
 
-## Router System
+## Middleware System
+
+Middleware uses the onion execution model and must return Response objects.
+
+### Middleware Execution Model
+
+Middleware follows the onion model, where each middleware can execute code before and after request processing:
+
+```typescript
+app.use((req, next) => {
+  console.log('1: Enter')
+  const result = next(req)  // Call next middleware
+  console.log('4: Exit')
+  return result
+})
+
+app.use((req, next) => {
+  console.log('2: Enter')
+  const result = next(req)
+  console.log('3: Exit')
+  return result
+})
+
+// Execution order: 1 -> 2 -> 3 -> 4
+```
+
+**Important Principles:**
+- Middleware **must return Response objects**
+- Call `next(req)` to continue to subsequent middleware
+- Not calling `next()` will interrupt the execution chain
+- Supports mixing synchronous and asynchronous middleware
+
+### Middleware Types
+
+Middleware function TypeScript type definitions:
+
+```typescript
+type HttpMiddleware = (
+  request: RequestInfo, 
+  next: Next<RequestInfo, MaybeAsyncResponse>
+) => MaybeAsyncResponse
+
+type Next<I, O> = (input?: I) => O
+type MaybeAsyncResponse = Response | Promise<Response>
+```
+
+---
+
+## Router and Modularity
 
 Routers provide modular route management with support for composition and nesting.
 
-### `Router(): RouterPipeline`
+### Router - Standalone Router
 
-Creates an independent router instance.
+#### `Router(): RouterPipeline`
+
+Creates standalone router instances.
 
 ```typescript
 import { Router } from 'farrow-http'
@@ -828,7 +948,7 @@ app.use(userRouter)
 app.route('/api').use(apiRouter)
 ```
 
-### Router Methods
+### Nested Routes
 
 #### `route(name: string): Pipeline<RequestInfo, MaybeAsyncResponse>`
 
@@ -852,9 +972,11 @@ userRouter.use(authMiddleware)
 adminRouter.use(adminMiddleware)
 ```
 
+### Static File Service
+
 #### `serve(name: string, dirname: string): void`
 
-Provides static file serving with built-in security protections.
+Provides static file serving with built-in security protection.
 
 ```typescript
 // Basic static file serving
@@ -862,10 +984,10 @@ app.serve('/static', './public')
 app.serve('/uploads', './storage/uploads')
 
 // Built-in security features:
-// - Automatic directory traversal attack prevention (path normalization)
-// - Automatic file permission checking (using fs.stat to verify access)
-// - Serves index.html for directory requests (e.g., /static/ → ./public/index.html)
-// - Gracefully passes to next middleware if file not found or inaccessible
+// - Automatic prevention of directory traversal attacks (path normalization)
+// - Automatic file permission checks (uses fs.stat to verify access permissions)
+// - Provides index.html for directory requests (e.g., /static/ → ./public/index.html)
+// - Gracefully passes to next middleware if file is not found or inaccessible
 // - Secure path handling across all platforms
 
 // Examples:
@@ -875,11 +997,9 @@ app.serve('/uploads', './storage/uploads')
 // /uploads/../secret → blocked (directory traversal protection)
 ```
 
----
+## Context Management
 
-## Middleware
-
-Middleware uses the onion execution model and must return Response objects.
+### Context
 
 ### Middleware Execution Model
 
@@ -1316,11 +1436,9 @@ http.serve('/uploads', './storage/uploads')
 // /uploads/../secret → blocked (directory traversal protection)
 ```
 
----
+#### Response Interception
 
-## Response Interception
-
-### Capture and Transform Responses
+##### Capture and Transform Responses
 
 ```typescript
 // Globally capture and transform JSON responses
@@ -1376,7 +1494,7 @@ app.use(matchBodyType('string', (body) => {
 
 ---
 
-## Testing
+## Testing Support
 
 ```typescript
 import { Http } from 'farrow-http'
@@ -1612,3 +1730,4 @@ app.listen(port, () => {
 // Export for testing
 export { app }
 ```
+

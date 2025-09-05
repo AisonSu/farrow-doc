@@ -34,8 +34,6 @@ app.delete('/posts')    // DELETE request
 app.head('/posts')      // HEAD request
 app.options('/posts')   // OPTIONS request
 
-// Handle all methods
-app.all('/posts')       // Matches all HTTP methods
 ```
 
 ### Route Parameters

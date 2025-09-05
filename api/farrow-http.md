@@ -1,32 +1,50 @@
-# Farrow HTTP API 参考文档
+# Farrow HTTP 用户 API 参考
 
 ## 概述
 
 Farrow HTTP 是一个 TypeScript 优先的 Web 框架，提供类型安全的路由和自动验证功能。它构建在 farrow-pipeline 中间件系统和 farrow-schema 验证系统之上，既提供强大的功能，又提供出色的开发者体验。
 
-## 快速导航
+## 目录
 
-### 入门指南
-- [安装和快速开始](#安装和快速开始) - 5分钟上手
-- [基础示例](#基础示例) - 常用代码模板
+- [快速开始](#快速开始)
+- [核心概念](#核心概念)
+  - [RequestInfo - 请求信息对象](#requestinfo---请求信息对象)
+- [服务器创建](#服务器创建)
+  - [Http - HTTP 服务器](#http---http-服务器)
+  - [Https - HTTPS 服务器](#https---https-服务器)
+- [路由系统](#路由系统)
+  - [HTTP 方法路由](#http-方法路由)
+  - [路由模式和自动验证](#路由模式和自动验证)
+  - [高级路由匹配](#高级路由匹配)
+- [响应构建](#响应构建)
+  - [基础响应类型](#基础响应类型)
+    - [JSON 响应](#json-响应)
+    - [文本响应](#文本响应)
+    - [HTML 响应](#html-响应)
+    - [文件响应](#文件响应)
+    - [流响应](#流响应)
+    - [重定向响应](#重定向响应)
+    - [自定义响应](#自定义响应)
+  - [响应操作](#响应操作)
+    - [响应方法](#响应方法-可链式调用)
+    - [响应合并](#响应合并)
+    - [响应拦截](#响应拦截)
+- [中间件系统](#中间件系统)
+  - [中间件执行模型](#中间件执行模型)
+  - [中间件类型](#中间件类型)
+- [路由器与模块化](#路由器与模块化)
+  - [Router - 独立路由器](#router-routerpipeline)
+  - [嵌套路由](#嵌套路由)
+  - [静态文件服务](#静态文件服务)
+- [上下文管理](#上下文管理)
+  - [Context 上下文](#context-上下文)
+  - [上下文钩子](#上下文钩子)
+- [错误处理](#错误处理)
+  - [HttpError 类](#httperror-类)
+  - [全局错误处理](#全局错误处理器)
+- [测试支持](#测试支持)
 
-### 核心 API
-- [服务器创建](#服务器创建) - Http(), Https(), 配置选项
-- [路由定义](#路由定义) - get(), post(), match() 等
-- [响应构建](#响应构建) - Response 对象和方法
-- [中间件](#中间件) - use(), 洋葱模型, 错误处理
-
-### 高级功能  
-- [路由器系统](#路由器系统) - Router(), route(), 模块化
-- [上下文管理](#上下文管理) - Context, hooks, 请求隔离
-- [静态文件](#静态文件) - serve(), 安全保护
-- [测试支持](#测试) - 测试配置和示例
-
-### 参考资料
-- [API 速查表](#api-速查表) - 常用方法快速查找  
-- [完整示例](#完整示例) - 生产级应用代码
-
-## 安装和快速开始
+## 快速开始
 
 ### 安装
 
@@ -169,7 +187,61 @@ app.listen(3000)
 
 ---
 
+## 核心概念
+
+### RequestInfo - 请求信息对象
+
+farrow-http 的核心是 `RequestInfo` 对象，它包含所有解析后的请求数据：
+
+```typescript
+type RequestInfo = {
+  readonly pathname: string         // 路径名，如 "/users/123"
+  readonly method?: string          // HTTP 方法，如 "GET", "POST"
+  readonly query?: RequestQuery     // 查询参数，如 { page: 1, limit: 10 }
+  readonly body?: any              // 请求体，已解析和验证
+  readonly headers?: RequestHeaders // 请求标头，如 { authorization: "Bearer token" }
+  readonly cookies?: RequestCookies // Cookies，如 { sessionId: "abc123" }
+  readonly params?: RequestParams   // 路径参数，如 { id: 123 } (从 /users/<id:int> 解析)
+}
+
+type RequestQuery = { readonly [key: string]: any }
+type RequestHeaders = { readonly [key: string]: any }
+type RequestCookies = { readonly [key: string]: any }
+type RequestParams = { readonly [key: string]: any }
+```
+
+**RequestInfo 的特点：**
+
+- **类型安全**: 所有字段都有明确的类型定义
+- **只读属性**: 使用 `readonly` 确保数据不被意外修改
+- **自动解析**: 路径参数、查询参数、请求体等都会根据路由定义自动验证和类型转换
+- **一致性**: 在整个中间件链中，RequestInfo 提供统一的请求数据访问接口
+
+**RequestInfo 在中间件中的使用：**
+
+```typescript
+// 中间件函数签名
+type Middleware = (req: RequestInfo, next: Next) => MaybeAsyncResponse
+
+// 实际使用示例
+app.get('/users/<id:int>?<page?:int>').use((req) => {
+  // req.pathname: string - "/users/123"
+  // req.method: string - "GET"  
+  // req.params.id: number - 123 (已验证为整数)
+  // req.query.page: number | undefined - 可选的页码参数
+  
+  return Response.json({
+    userId: req.params.id,
+    page: req.query.page || 1
+  })
+})
+```
+
+---
+
 ## 服务器创建
+
+### Http - HTTP 服务器
 
 ### `Http(options?: HttpPipelineOptions): HttpPipeline`
 
@@ -253,11 +325,9 @@ type BodyOptions = {
 }
 ```
 
----
+### Https - HTTPS 服务器
 
-## HTTPS 服务器
-
-### `Https(options?: HttpsPipelineOptions): HttpPipeline`
+#### `Https(options?: HttpsPipelineOptions): HttpPipeline`
 
 创建带有 TLS/SSL 配置的 HTTPS 服务器。
 
@@ -278,7 +348,7 @@ app.listen(443)
 
 ---
 
-## 路由定义
+## 路由系统
 
 ### HTTP 方法路由
 
@@ -319,10 +389,6 @@ http.options('/users', () => {
     .empty()
 })
 
-// 匹配所有方法
-http.all('/catch-all', (req) => {
-  return Response.json({ method: req.method })
-})
 ```
 
 ### 高级路由匹配
@@ -345,8 +411,6 @@ http.match({
   return Response.json({ userId: request.params.id })
 })
 ```
-
----
 
 ### 路由模式和自动验证
 
@@ -562,7 +626,9 @@ type ValidationError = {
 
 ## 响应构建
 
-### JSON 响应
+### 基础响应类型
+
+#### JSON 响应
 
 ```typescript
 // 简单 JSON
@@ -582,14 +648,14 @@ Response
   .json({ data: [] })
 ```
 
-### 文本响应
+#### 文本响应
 
 ```typescript
 Response.text('纯文本响应')
 Response.status(404).text('未找到')
 ```
 
-### HTML 响应
+#### HTML 响应
 
 ```typescript
 Response.html('<h1>Hello World</h1>')
@@ -601,7 +667,7 @@ Response.status(200).html(`
 `)
 ```
 
-### 文件响应
+#### 文件响应
 
 创建支持流式传输和范围请求的文件响应。
 
@@ -625,7 +691,7 @@ Response.file('./report.pdf')
   .header('Cache-Control', 'private, max-age=3600')
 ```
 
-### 流响应
+#### 流响应
 
 ```typescript
 import { Readable } from 'stream'
@@ -634,7 +700,7 @@ const stream = Readable.from(['Hello', ' ', 'World'])
 Response.stream(stream)
 ```
 
-### 重定向响应
+#### 重定向响应
 
 ```typescript
 Response.redirect('/login')
@@ -651,13 +717,13 @@ apiRouter.use(() => {
 })
 ```
 
-### 空响应
+#### 空响应
 
 ```typescript
 Response.status(204).empty()
 ```
 
-### 自定义响应
+#### 自定义响应
 
 创建用于直接 Node.js 响应操作的自定义响应。
 
@@ -697,7 +763,9 @@ Response.custom(({ req, res }) => {
 })
 ```
 
-### 响应方法（可链式调用）
+### 响应操作
+
+#### 响应方法（可链式调用）
 
 ```typescript
 // 状态和标头
@@ -758,7 +826,7 @@ Response.file('./document.pdf').attachment('document.pdf', {
 })
 ```
 
-### 响应类型检查
+#### 响应类型检查
 
 ```typescript
 // Response.is() 检查响应内容类型
@@ -772,7 +840,7 @@ htmlResponse.is('html')    // 返回：'html'
 htmlResponse.is('text', 'html') // 返回匹配的类型或 false
 ```
 
-### 响应合并
+#### 响应合并
 
 ```typescript
 // 重要：Response.merge 遵循"后者覆盖前者"原则
@@ -803,81 +871,65 @@ const result = Response.json({ users: [] }).header('X-Version', 'v1')
 
 **重要提示**：使用 `merge()` 时，最后一个响应的主体会**完全覆盖**之前的主体。对于主体 + 标头/cookies，请始终使用链式调用，或确保主体是合并中的最后一项。
 
----
+#### 响应拦截
 
-## 路由器系统
-
-路由器提供模块化路由管理，支持组合和嵌套。
-
-### `Router(): RouterPipeline`
-
-创建独立的路由器实例。
+##### 捕获和转换响应
 
 ```typescript
-import { Router } from 'farrow-http'
+// 全局捕获和转换 JSON 响应
+http.capture('json', (jsonBody) => {
+  // jsonBody 类型：{ type: 'json', value: JsonType }
+  return Response.json({
+    data: jsonBody.value,
+    timestamp: new Date().toISOString(),
+    version: 'v1',
+    success: true
+  })
+})
 
-const userRouter = Router()
-const apiRouter = Router()
+// 捕获文件响应用于日志/分析
+http.capture('file', (fileBody) => {
+  // fileBody 类型：{ type: 'file', value: string, options?: FileBodyOptions }
+  console.log(`文件服务: ${fileBody.value}`)
+  return Response.file(fileBody.value, fileBody.options)
+})
 
-// 路由器可以独立使用
-userRouter.get('/profile').use(() => Response.json({ user: 'profile' }))
-userRouter.post('/update').use(() => Response.json({ success: true }))
-
-// 将路由器挂载到应用程序
-app.use(userRouter)
-app.route('/api').use(apiRouter)
+// 所有可捕获的主体类型：
+// 'empty' | 'string' | 'json' | 'stream' | 'buffer' | 'file' | 'custom' | 'redirect'
 ```
 
-### 路由器方法
+##### `matchBodyType<T extends keyof BodyMap>(type: T, callback: (body: BodyMap[T]) => MaybeAsyncResponse)`
 
-#### `route(name: string): Pipeline<RequestInfo, MaybeAsyncResponse>`
-
-创建支持无限嵌套的子路由。
+创建中间件来捕获和处理特定响应主体类型。
 
 ```typescript
-const app = Http({ basenames: ['/api'] })
+import { matchBodyType } from 'farrow-http'
 
-// 创建嵌套路由
-const v1Router = app.route('/v1')        // 路径前缀：/api/v1
-const userRouter = v1Router.route('/users')  // 路径前缀：/api/v1/users
-const adminRouter = userRouter.route('/admin') // 路径前缀：/api/v1/users/admin
+// 为所有 JSON 响应添加时间戳和版本信息
+app.use(matchBodyType('json', (body) => {
+  return Response.json({
+    ...body.value,
+    timestamp: Date.now(),
+    version: 'v1'
+  })
+}))
 
-// 每个路由器都有完整功能
-userRouter.get('/').use(() => Response.json(users))           // GET /api/v1/users
-userRouter.get('/<id:int>').use(() => Response.json(user))   // GET /api/v1/users/123
-adminRouter.get('/stats').use(() => Response.json(stats))    // GET /api/v1/users/admin/stats
+// 为所有文件响应添加缓存标头
+app.use(matchBodyType('file', (body) => {
+  return Response.file(body.value, body.options)
+    .header('Cache-Control', 'public, max-age=3600')
+    .header('X-File-Server', 'farrow-http')
+}))
 
-// 路由器可以有自己的中间件
-userRouter.use(authMiddleware)
-adminRouter.use(adminMiddleware)
-```
-
-#### `serve(name: string, dirname: string): void`
-
-提供带有内置安全保护的静态文件服务。
-
-```typescript
-// 基本静态文件服务
-app.serve('/static', './public')
-app.serve('/uploads', './storage/uploads')
-
-// 内置安全特性：
-// - 自动防止目录遍历攻击（路径规范化）
-// - 自动文件权限检查（使用 fs.stat 验证访问权限）
-// - 为目录请求提供 index.html（例如：/static/ → ./public/index.html）
-// - 如果文件未找到或不可访问，优雅地传递给下一个中间件
-// - 跨所有平台的安全路径处理
-
-// 示例：
-// /static/style.css → ./public/style.css
-// /static/ → ./public/index.html（如果存在）
-// /static/docs/ → ./public/docs/index.html（如果存在）
-// /uploads/../secret → 被阻止（目录遍历防护）
+// 处理字符串响应，添加前缀
+app.use(matchBodyType('string', (body) => {
+  return Response.string(`[${new Date().toISOString()}] ${body.value}`)
+}))
 ```
 
 ---
 
-## 中间件
+## 中间件系统
 
 中间件使用洋葱执行模型，必须返回 Response 对象。
 
@@ -1022,7 +1074,85 @@ type MaybeAsyncResponse = Response | Promise<Response>
 
 ---
 
+## 路由器与模块化
+
+路由器提供模块化路由管理，支持组合和嵌套。
+
+### Router - 独立路由器
+
+#### `Router(): RouterPipeline`
+
+创建独立的路由器实例。
+
+```typescript
+import { Router } from 'farrow-http'
+
+const userRouter = Router()
+const apiRouter = Router()
+
+// 路由器可以独立使用
+userRouter.get('/profile').use(() => Response.json({ user: 'profile' }))
+userRouter.post('/update').use(() => Response.json({ success: true }))
+
+// 将路由器挂载到应用程序
+app.use(userRouter)
+app.route('/api').use(apiRouter)
+```
+
+### 嵌套路由
+
+#### `route(name: string): Pipeline<RequestInfo, MaybeAsyncResponse>`
+
+创建支持无限嵌套的子路由。
+
+```typescript
+const app = Http({ basenames: ['/api'] })
+
+// 创建嵌套路由
+const v1Router = app.route('/v1')        // 路径前缀：/api/v1
+const userRouter = v1Router.route('/users')  // 路径前缀：/api/v1/users
+const adminRouter = userRouter.route('/admin') // 路径前缀：/api/v1/users/admin
+
+// 每个路由器都有完整功能
+userRouter.get('/').use(() => Response.json(users))           // GET /api/v1/users
+userRouter.get('/<id:int>').use(() => Response.json(user))   // GET /api/v1/users/123
+adminRouter.get('/stats').use(() => Response.json(stats))    // GET /api/v1/users/admin/stats
+
+// 路由器可以有自己的中间件
+userRouter.use(authMiddleware)
+adminRouter.use(adminMiddleware)
+```
+
+### 静态文件服务
+
+#### `serve(name: string, dirname: string): void`
+
+提供带有内置安全保护的静态文件服务。
+
+```typescript
+// 基本静态文件服务
+app.serve('/static', './public')
+app.serve('/uploads', './storage/uploads')
+
+// 内置安全特性：
+// - 自动防止目录遍历攻击（路径规范化）
+// - 自动文件权限检查（使用 fs.stat 验证访问权限）
+// - 为目录请求提供 index.html（例如：/static/ → ./public/index.html）
+// - 如果文件未找到或不可访问，优雅地传递给下一个中间件
+// - 跨所有平台的安全路径处理
+
+// 示例：
+// /static/style.css → ./public/style.css
+// /static/ → ./public/index.html（如果存在）
+// /static/docs/ → ./public/docs/index.html（如果存在）
+// /uploads/../secret → 被阻止（目录遍历防护）
+```
+
+---
+
 ## 上下文管理
+
+### Context 上下文
 
 **上下文隔离**：farrow-http 自动启用 Node.js 异步钩子（AsyncLocalStorage）来提供请求级隔离。每个 HTTP 请求在自己的容器中运行，确保上下文值永远不会在请求之间泄露。
 
@@ -1174,26 +1304,6 @@ http.use(() => {
 })
 ```
 
-### RequestInfo
-
-包含所有解析后请求数据的请求信息对象：
-
-```typescript
-type RequestInfo = {
-  readonly pathname: string         // 路径名
-  readonly method?: string          // HTTP 方法
-  readonly query?: RequestQuery     // 查询参数
-  readonly body?: any              // 请求体
-  readonly headers?: RequestHeaders // 请求标头
-  readonly cookies?: RequestCookies // Cookies
-}
-
-type RequestQuery = { readonly [key: string]: any }
-type RequestHeaders = { readonly [key: string]: any }
-type RequestCookies = { readonly [key: string]: any }
-```
-
----
 
 ## 错误处理
 
@@ -1295,88 +1405,7 @@ const app = Http({
 
 ---
 
-## 静态文件
-
-```typescript
-// 提供带内置安全保护的静态文件
-http.serve('/static', './public')
-http.serve('/uploads', './storage/uploads')
-
-// 内置安全特性：
-// - 自动防止目录遍历攻击（路径规范化）
-// - 自动文件权限检查（使用 fs.stat 验证访问权限）
-// - 为目录请求提供 index.html（例如：/static/ → ./public/index.html）
-// - 如果文件未找到或不可访问，优雅地传递给下一个中间件
-// - 跨所有平台的安全路径处理
-
-// 示例：
-// /static/style.css → ./public/style.css
-// /static/ → ./public/index.html（如果存在）
-// /static/docs/ → ./public/docs/index.html（如果存在）
-// /uploads/../secret → 被阻止（目录遍历防护）
-```
-
----
-
-## 响应拦截
-
-### 捕获和转换响应
-
-```typescript
-// 全局捕获和转换 JSON 响应
-http.capture('json', (jsonBody) => {
-  // jsonBody 类型：{ type: 'json', value: JsonType }
-  return Response.json({
-    data: jsonBody.value,
-    timestamp: new Date().toISOString(),
-    version: 'v1',
-    success: true
-  })
-})
-
-// 捕获文件响应用于日志/分析
-http.capture('file', (fileBody) => {
-  // fileBody 类型：{ type: 'file', value: string, options?: FileBodyOptions }
-  console.log(`文件服务: ${fileBody.value}`)
-  return Response.file(fileBody.value, fileBody.options)
-})
-
-// 所有可捕获的主体类型：
-// 'empty' | 'string' | 'json' | 'stream' | 'buffer' | 'file' | 'custom' | 'redirect'
-```
-
-### `matchBodyType<T extends keyof BodyMap>(type: T, callback: (body: BodyMap[T]) => MaybeAsyncResponse)`
-
-创建中间件来捕获和处理特定响应主体类型。
-
-```typescript
-import { matchBodyType } from 'farrow-http'
-
-// 为所有 JSON 响应添加时间戳和版本信息
-app.use(matchBodyType('json', (body) => {
-  return Response.json({
-    ...body.value,
-    timestamp: Date.now(),
-    version: 'v1'
-  })
-}))
-
-// 为所有文件响应添加缓存标头
-app.use(matchBodyType('file', (body) => {
-  return Response.file(body.value, body.options)
-    .header('Cache-Control', 'public, max-age=3600')
-    .header('X-File-Server', 'farrow-http')
-}))
-
-// 处理字符串响应，添加前缀
-app.use(matchBodyType('string', (body) => {
-  return Response.string(`[${new Date().toISOString()}] ${body.value}`)
-}))
-```
-
----
-
-## 测试
+## 测试支持
 
 ```typescript
 import { Http } from 'farrow-http'
@@ -1612,3 +1641,4 @@ app.listen(port, () => {
 // 导出用于测试
 export { app }
 ```
+
