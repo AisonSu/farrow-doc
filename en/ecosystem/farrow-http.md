@@ -138,5 +138,5 @@ For detailed API documentation, see [farrow-http API](/en/api/farrow-http)
 ## Related Links
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [Getting Started](/en/guide/getting-started)
+- [Essentials](/en/guide/essentials)
 - [Essentials](/en/guide/essentials)

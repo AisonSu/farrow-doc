@@ -183,5 +183,5 @@ Validator.validate(Config, config)
 ## 相关链接
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [核心概念](/guide/core-concepts)
+- [核心概念与设计哲学](/guide/philosophy-and-practices)
 - [基础教程](/guide/essentials)

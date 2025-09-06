@@ -1,18 +1,57 @@
 # Essentials
 
-> Master the core skills for daily Farrow development 🛠️
+Farrow is a progressive TypeScript Web framework. You can start with the simplest HTTP server and gradually add more features as needed.
 
-## Overview
+## What is Farrow?
 
-This chapter will systematically introduce Farrow's fundamental features, enabling you to develop proficiently on a daily basis. We'll learn these concepts by building a blog API.
+Farrow is a Web framework designed specifically for TypeScript, consisting of three core parts:
 
-Learning objectives:
-- 🛣️ Master all features of the routing system
-- 🔗 Understand and use middleware
-- 📝 Master Schema definition and validation
-- 🎨 Build various types of responses
-- 🔒 Implement authentication and authorization
-- ⚡ Handle errors and exceptions
+- **🛣️ HTTP Server** - Type-safe routing and response handling
+- **📝 Schema Validation** - Powerful type definitions and data validation  
+- **🔗 Middleware Pipeline** - Functional request processing flow
+
+Unlike other frameworks, Farrow is designed for TypeScript from the ground up, giving you a complete type-safe experience.
+
+## Create Your First Application
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) version 16 or higher
+- Familiarity with [TypeScript](https://www.typescriptlang.org/) syntax
+
+### Installation
+
+Install Farrow in your project:
+
+```bash
+npm install farrow-http farrow-schema farrow-pipeline
+```
+
+### Hello World
+
+Create a file named `app.ts`:
+
+```typescript
+import { Http, Response } from 'farrow-http'
+
+const app = Http()
+
+app.get('/').use(() => {
+  return Response.text('Hello Farrow!')
+})
+
+app.listen(3000)
+```
+
+Now run:
+
+```bash
+npx tsx app.ts
+```
+
+You should see "Hello Farrow!" at [http://localhost:3000](http://localhost:3000)!
+
+Congratulations! You just created your first Farrow application. It's just a simple server, but it already showcases Farrow's core features: **clean API** and **type safety**.
 
 ## Detailed Routing System
 
@@ -1626,7 +1665,7 @@ Consolidate your learning through complete projects
 
 <div class="doc-footer">
   <div class="doc-nav">
-    <a href="./02-core-concepts.md">← Core Concepts</a>
+    <a href="./philosophy-and-practices.md">← Core Concepts & Philosophy</a>
     <a href="./04-components-in-depth.md">Components In-Depth →</a>
   </div>
 </div>

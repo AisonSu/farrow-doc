@@ -231,5 +231,5 @@ For detailed API documentation, see [farrow-pipeline API](/en/api/farrow-pipelin
 ## Related Links
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [Core Concepts](/en/guide/core-concepts)
+- [Core Concepts & Philosophy](/en/guide/philosophy-and-practices)
 - [Advanced Tutorial](/en/guide/advanced)

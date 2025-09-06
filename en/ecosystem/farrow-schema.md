@@ -183,5 +183,5 @@ For detailed API documentation, see [farrow-schema API](/en/api/farrow-schema)
 ## Related Links
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [Core Concepts](/en/guide/core-concepts)
+- [Core Concepts & Philosophy](/en/guide/philosophy-and-practices)
 - [Essentials](/en/guide/essentials)

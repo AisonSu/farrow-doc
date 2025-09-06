@@ -138,5 +138,5 @@ app.use((request, next) => {
 ## 相关链接
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [快速开始](/guide/getting-started)
+- [基础教程](/guide/essentials)
 - [基础教程](/guide/essentials)

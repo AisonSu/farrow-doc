@@ -12,7 +12,7 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/' },
-          { text: '指南', link: '/guide/getting-started' },
+          { text: '指南', link: '/guide/essentials' },
           { text: 'API', link: '/api/' },
           { 
             text: '生态系统',
@@ -30,34 +30,37 @@ export default defineConfig({
         sidebar: {
           '/guide/': [
             {
-              text: '开始',
+              text: '基础教程',
               items: [
-                { text: '快速开始', link: '/guide/getting-started' },
-                { text: '核心概念', link: '/guide/core-concepts' }
+                { text: '开始使用', link: '/guide/essentials' },
+                { text: '核心概念与设计哲学', link: '/guide/philosophy-and-practices' }
               ]
             },
             {
-              text: '基础',
+              text: '深入指南',
               items: [
-                { text: '基础教程', link: '/guide/essentials' },
-                { text: '├ 路由系统详解', link: '/guide/essentials#路由系统详解' },
-                { text: '├ Schema 定义与验证', link: '/guide/essentials#schema-定义与验证' },
-                { text: '├ 中间件系统', link: '/guide/essentials#中间件系统' },
-                { text: '├ 响应构建', link: '/guide/essentials#响应构建' },
-                { text: '├ Context 系统', link: '/guide/essentials#context-系统' },
-                { text: '├ 错误处理', link: '/guide/essentials#错误处理' },
-                { text: '├ 实战：博客 API', link: '/guide/essentials#实战-构建完整的博客-api' },
-                { text: '└ 性能优化技巧', link: '/guide/essentials#性能优化技巧' }
+                { text: '高级特性概览', link: '/guide/advanced' }
               ]
             },
             {
-              text: '进阶',
+              text: 'HTTP 路由系统',
               items: [
-                { text: '深度教程', link: '/guide/advanced' },
-                { text: '├ Pipeline 高级特性', link: '/guide/advanced#farrow-pipeline-高级特性' },
-                { text: '├ Schema 高级特性', link: '/guide/advanced#farrow-schema-高级特性' },
-                { text: '├ HTTP 高级特性', link: '/guide/advanced#farrow-http-高级特性' },
-                { text: '└ 哲学与最佳实践', link: '/guide/philosophy-and-practices' }
+                { text: '路由参数进阶', link: '/guide/advanced-routing' },
+                { text: '高级路由技术', link: '/guide/flexible-routing' },
+                { text: 'Response 构建与处理', link: '/guide/advanced-response' }
+              ]
+            },
+            {
+              text: 'Schema 验证系统',
+              items: [
+                { text: 'Schema 高级类型', link: '/guide/advanced-schema' },
+                { text: 'Schema 操作与变换', link: '/guide/schema-operations' }
+              ]
+            },
+            {
+              text: 'Pipeline 中间件系统',
+              items: [
+                { text: 'Pipeline 完整指南', link: '/guide/pipeline-concepts' }
               ]
             }
           ],
@@ -127,7 +130,7 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: 'Home', link: '/en/' },
-          { text: 'Guide', link: '/en/guide/getting-started' },
+          { text: 'Guide', link: '/en/guide/essentials' },
           { text: 'API', link: '/en/api/' },
           { 
             text: 'Ecosystem',
@@ -145,34 +148,37 @@ export default defineConfig({
         sidebar: {
           '/en/guide/': [
             {
-              text: 'Getting Started',
+              text: 'Tutorial',
               items: [
-                { text: 'Quick Start', link: '/en/guide/getting-started' },
-                { text: 'Core Concepts', link: '/en/guide/core-concepts' }
+                { text: 'Getting Started', link: '/en/guide/essentials' },
+                { text: 'Core Concepts & Philosophy', link: '/en/guide/philosophy-and-practices' }
               ]
             },
             {
-              text: 'Essentials',
+              text: 'Deep Dive Guide',
               items: [
-                { text: 'Tutorial', link: '/en/guide/essentials' },
-                { text: '├ Detailed Routing System', link: '/en/guide/essentials#detailed-routing-system' },
-                { text: '├ Schema Definition and Validation', link: '/en/guide/essentials#schema-definition-and-validation' },
-                { text: '├ Middleware System', link: '/en/guide/essentials#middleware-system' },
-                { text: '├ Response Building', link: '/en/guide/essentials#response-building' },
-                { text: '├ Context System', link: '/en/guide/essentials#context-system' },
-                { text: '├ Error Handling', link: '/en/guide/essentials#error-handling' },
-                { text: '├ Practical Example: Blog API', link: '/en/guide/essentials#practical-example-building-a-complete-blog-api' },
-                { text: '└ Performance Optimization Tips', link: '/en/guide/essentials#performance-optimization-tips' }
+                { text: 'Advanced Features Overview', link: '/en/guide/advanced' }
               ]
             },
             {
-              text: 'Advanced',
+              text: 'HTTP Routing System',
               items: [
-                { text: 'Deep Dive', link: '/en/guide/advanced' },
-                { text: '├ Pipeline Advanced Features', link: '/en/guide/advanced#farrow-pipeline-advanced-features' },
-                { text: '├ Schema Advanced Features', link: '/en/guide/advanced#farrow-schema-advanced-features' },
-                { text: '├ HTTP Advanced Features', link: '/en/guide/advanced#farrow-http-advanced-features' },
-                { text: '└ Philosophy & Best Practices', link: '/en/guide/philosophy-and-practices' }
+                { text: 'Advanced Routing Parameters', link: '/en/guide/advanced-routing' },
+                { text: 'Advanced Routing Techniques', link: '/en/guide/flexible-routing' },
+                { text: 'Response Building & Processing', link: '/en/guide/advanced-response' }
+              ]
+            },
+            {
+              text: 'Schema Validation System',
+              items: [
+                { text: 'Advanced Schema Types', link: '/en/guide/advanced-schema' },
+                { text: 'Schema Operations & Transformations', link: '/en/guide/schema-operations' }
+              ]
+            },
+            {
+              text: 'Pipeline Middleware System',
+              items: [
+                { text: 'Pipeline Complete Guide', link: '/en/guide/pipeline-concepts' }
               ]
             }
           ],

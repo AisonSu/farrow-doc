@@ -243,7 +243,7 @@ type CreateUserType = TypeOf<typeof CreateUser>
 ## Learning Path
 
 ### 1. Getting Started
-1. Read [Getting Started](/en/guide/getting-started)
+1. Read [Essentials](/en/guide/essentials)
 2. Learn [farrow-http](/en/api/farrow-http) basics
 3. Understand [farrow-schema](/en/api/farrow-schema) data validation
 

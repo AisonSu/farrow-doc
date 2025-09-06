@@ -231,5 +231,5 @@ appPipeline.use(compose(
 ## 相关链接
 
 - [GitHub](https://github.com/farrowjs/farrow)
-- [核心概念](/guide/core-concepts)
+- [核心概念与设计哲学](/guide/philosophy-and-practices)
 - [深度教程](/guide/advanced)

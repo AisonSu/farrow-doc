@@ -59,8 +59,6 @@ farrow-vitepress/
 ├── .vitepress/           # VitePress configuration
 │   └── config.mts        # Site configuration
 ├── guide/                # Guide documentation (Chinese)
-│   ├── getting-started.md
-│   ├── core-concepts.md
 │   ├── essentials.md
 │   ├── advanced.md
 │   └── philosophy-and-practices.md

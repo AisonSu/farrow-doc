@@ -11,7 +11,7 @@ hero:
   actions:
     - theme: brand
       text: Get Started
-      link: /en/guide/getting-started
+      link: /en/guide/essentials
     - theme: alt
       text: View on GitHub
       link: https://github.com/farrow-js/farrow

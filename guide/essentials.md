@@ -1,1632 +1,788 @@
 # 基础教程
 
-> 掌握 Farrow 日常开发的核心技能 🛠️
+Farrow 是一个渐进式 TypeScript Web 框架。你可以从最简单的 HTTP 服务器开始，然后根据需要逐步添加更多功能。
 
-## 概览
+## 什么是 Farrow？
 
-本章将系统地介绍 Farrow 的基础功能，让你能够熟练地进行日常开发。我们将通过构建一个博客 API 来学习这些概念。
+Farrow 是一个专为 TypeScript 设计的 Web 框架，它由三个核心部分组成：
 
-学习目标：
-- 🛣️ 掌握路由系统的所有特性
-- 🔗 理解和使用中间件
-- 📝 精通 Schema 定义和验证
-- 🎨 构建各种类型的响应
-- 🔒 实现认证和授权
-- ⚡ 处理错误和异常
+- **🛣️ HTTP 服务器** - 类型安全的路由和响应处理
+- **📝 Schema 验证** - 强大的类型定义和数据验证  
+- **🔗 中间件管道** - 函数式的请求处理流程
 
-## 路由系统详解
+与其他框架不同，Farrow 从一开始就为 TypeScript 而设计，让你享受完整的类型安全体验。
 
-### 基础路由
+## 创建你的第一个应用
 
-Farrow 的路由系统基于 Template Literal Types，提供了强大的类型推导：
+### 前提条件
+
+- [Node.js](https://nodejs.org/) 版本 16 或更高
+- 熟悉 [TypeScript](https://www.typescriptlang.org/) 语法
+
+### 安装
+
+在你的项目中安装 Farrow：
+
+```bash
+npm install farrow-http farrow-schema farrow-pipeline
+```
+
+### Hello World
+
+创建一个名为 `app.ts` 的文件：
 
 ```typescript
 import { Http, Response } from 'farrow-http'
 
 const app = Http()
 
-// 基础路由方法
-app.get('/posts')       // GET 请求
-app.post('/posts')      // POST 请求
-app.put('/posts')       // PUT 请求
-app.patch('/posts')     // PATCH 请求
-app.delete('/posts')    // DELETE 请求
-app.head('/posts')      // HEAD 请求
-app.options('/posts')   // OPTIONS 请求
+app.get('/').use(() => {
+  return Response.text('Hello Farrow!')
+})
 
+app.listen(3000)
 ```
 
-### 路由参数
+现在运行：
 
-#### 基础类型参数
+```bash
+npx tsx app.ts
+```
+
+你应该能看到 "Hello Farrow!" 在 [http://localhost:3000](http://localhost:3000)！
+
+恭喜！你刚刚创建了你的第一个 Farrow 应用。它只是一个简单的服务器，但这已经展示了 Farrow 的核心特性：**简洁的 API** 和 **类型安全**。
+
+## 创建一个应用
+
+现在让我们创建一个稍微复杂一点的应用。我们将构建一个简单的用户 API。
+
+### 定义数据结构
+
+首先，让我们定义用户的数据结构：
 
 ```typescript
-// 整数参数
-app.get('/posts/<id:int>').use((request) => {
-  const id: number = request.params.id  // 自动推导为 number
-  return Response.json({ postId: id })
+import { ObjectType, String, Number, Optional } from 'farrow-schema'
+
+class User extends ObjectType {
+  id = Number
+  name = String
+  email = String
+  age = Optional(Number)
+}
+```
+
+::: details 为什么使用 Class？
+Farrow 使用 ES6 类语法来定义数据结构，这样可以获得更好的 TypeScript 类型推导和 IDE 支持。
+:::
+
+### 添加路由
+
+现在让我们添加一些路由来处理用户数据：
+
+```typescript
+import { Http, Response } from 'farrow-http'
+
+const app = Http()
+
+// 获取所有用户
+app.get('/users').use(() => {
+  const users = [
+    { id: 1, name: 'Alice', email: 'alice@example.com' },
+    { id: 2, name: 'Bob', email: 'bob@example.com' }
+  ]
+  
+  return Response.json(users)
+})
+
+// 获取单个用户 - 路径参数会自动验证类型
+app.get('/users/<id:int>').use((request) => {
+  // request 是 RequestInfo 对象，包含请求的所有信息
+  const userId = request.params.id // TypeScript 知道这是 number!
+  // 如果访问 /users/abc，会自动返回 400 错误
+  
+  return Response.json({
+    id: userId,
+    name: `用户 ${userId}`,
+    email: `user${userId}@example.com`
+  })
+})
+
+app.listen(3000)
+```
+
+::: tip 💡 什么是 RequestInfo？
+每个路由处理器都会接收一个 `request` 参数，它是一个 `RequestInfo` 对象，包含了请求的所有信息：
+- `request.params` - 路径参数，如 `{ id: 123 }`
+- `request.query` - 查询参数，如 `{ page: 1 }`  
+- `request.body` - 请求体数据
+- `request.headers` - 请求头
+
+注意 `request.params.id` 自动被推导为 `number` 类型，因为我们在路由中使用了 `<id:int>`。Farrow 会自动解析和验证这些数据！
+:::
+
+### 请求体验证
+
+让我们添加一个创建用户的端点，并自动验证请求体：
+
+```typescript
+class CreateUserInput extends ObjectType {
+  name = String
+  email = String
+  age = Optional(Number)
+}
+
+app.post('/users', { body: CreateUserInput }).use((request) => {
+  // request.body 已经被验证并且具有正确的类型！
+  const newUser = {
+    id: Date.now(),
+    ...request.body
+  }
+  
+  return Response.status(201).json(newUser)
+})
+```
+
+现在如果你发送一个无效的请求体，Farrow 会自动返回 400 错误！
+
+### 路径参数（Params）
+
+路径参数是 URL 路径中的动态部分，使用 `<name:type>` 语法定义：
+
+```typescript
+// 基本路径参数
+app.get('/users/<id:int>').use((request) => {
+  const userId = request.params.id  // 自动验证为 number 类型
+  
+  return Response.json({
+    id: userId,
+    name: `用户 ${userId}`,
+    email: `user${userId}@example.com`
+  })
 })
 
 // 字符串参数
-app.get('/users/<username:string>').use((request) => {
-  const username: string = request.params.username
-  return Response.json({ username })
-})
-
-// 布尔参数
-app.get('/posts/<published:boolean>').use((request) => {
-  const published: boolean = request.params.published
-  return Response.json({ published })
-})
-
-// 浮点数参数
-app.get('/products/<price:float>').use((request) => {
-  const price: number = request.params.price
-  return Response.json({ price })
-})
-
-// ID 参数（特殊的字符串，通常用于标识符）
-app.get('/items/<itemId:id>').use((request) => {
-  const itemId: string = request.params.itemId
-  return Response.json({ itemId })
-})
-```
-
-#### 可选参数
-
-```typescript
-// 可选路径参数
-app.get('/posts/<id?:int>').use((request) => {
-  const id: number | undefined = request.params.id
-  
-  if (id === undefined) {
-    // 返回所有文章
-    return Response.json(getAllPosts())
-  } else {
-    // 返回特定文章
-    return Response.json(getPost(id))
-  }
-})
-
-// 可选查询参数
-app.get('/search?<q:string>&<page?:int>&<limit?:int>').use((request) => {
-  const { q, page = 1, limit = 10 } = request.query
-  // q: string (必需)
-  // page: number (可选，默认 1)
-  // limit: number (可选，默认 10)
-  
-  return Response.json(search(q, { page, limit }))
-})
-```
-
-#### 数组参数
-
-```typescript
-// 一个或多个（+）
-app.get('/tags/<tags+:string>').use((request) => {
-  const tags: string[] = request.params.tags  // 至少一个
-  return Response.json({ tags })
-})
-// 匹配: /tags/javascript/typescript/nodejs
-
-// 零个或多个（*）
-app.get('/categories/<cats*:string>').use((request) => {
-  const cats: string[] | undefined = request.params.cats  // 可能为空
-  return Response.json({ categories: cats || [] })
-})
-// 匹配: /categories 或 /categories/tech/web
-```
-
-#### 联合类型参数
-
-```typescript
-// 枚举值
-app.get('/posts/<status:draft|published|archived>').use((request) => {
-  const status: 'draft' | 'published' | 'archived' = request.params.status
-  return Response.json(getPostsByStatus(status))
-})
-
-// 字面量类型
-app.get('/theme/<mode:{light}|{dark}>').use((request) => {
-  const mode: 'light' | 'dark' = request.params.mode
-  return Response.json({ theme: mode })
-})
-```
-
-### 复杂路由示例
-
-```typescript
-// 组合多种参数类型
-app.get(
-  '/api/v<version:int>/posts/<id:int>/comments?<page?:int>&<limit?:int>&<sort?:asc|desc>'
-).use((request) => {
-  const { version, id } = request.params
-  const { page = 1, limit = 20, sort = 'asc' } = request.query
-  
-  // version: number
-  // id: number
-  // page: number
-  // limit: number
-  // sort: 'asc' | 'desc'
+app.get('/users/<name:string>').use((request) => {
+  const userName = request.params.name  // string 类型
   
   return Response.json({
-    api: `v${version}`,
-    postId: id,
-    comments: getComments(id, { page, limit, sort })
+    message: `你好，${userName}！`
+  })
+})
+
+// 多个路径参数
+app.get('/users/<id:int>/posts/<postId:int>').use((request) => {
+  const { id, postId } = request.params
+  // id 和 postId 都是 number 类型
+  
+  return Response.json({
+    userId: id,
+    postId: postId,
+    post: `用户 ${id} 的文章 ${postId}`
   })
 })
 ```
 
-### 路由组织
+::: tip 💡 路径参数类型
+- `<id:int>` - 整数，自动验证并转换为 `number`
+- `<name:string>` - 字符串，类型为 `string`
+- `<id?:int>` - 可选参数，类型为 `number | undefined`
+:::
 
-#### 使用 Router
+### 路径参数的验证
 
-```typescript
-import { Router } from 'farrow-http'
-
-// 创建模块化的路由
-const postsRouter = Router()
-
-postsRouter.get('/').use(() => {
-  return Response.json(getAllPosts())
-})
-
-postsRouter.get('/<id:int>').use((request) => {
-  return Response.json(getPost(request.params.id))
-})
-
-postsRouter.post('/', {
-  body: CreatePostSchema
-}).use((request) => {
-  const post = createPost(request.body)
-  return Response.status(201).json(post)
-})
-
-// 用户路由
-const usersRouter = Router()
-
-usersRouter.get('/').use(() => {
-  return Response.json(getAllUsers())
-})
-
-usersRouter.get('/<id:int>').use((request) => {
-  return Response.json(getUser(request.params.id))
-})
-
-// 组合路由 - 方式1：使用 route
-const apiRouter = Router()
-apiRouter.route('/posts').use(postsRouter)
-apiRouter.route('/users').use(usersRouter)
-
-// 挂载到主应用
-app.route('/api/v1').use(apiRouter)
-
-// 最终路由：
-// GET /api/v1/posts
-// GET /api/v1/posts/:id
-// POST /api/v1/posts
-// GET /api/v1/users
-// GET /api/v1/users/:id
-```
-
-#### 路由前缀
+Farrow 会自动验证路径参数的类型：
 
 ```typescript
-// 使用 basenames 设置全局前缀
-const app = Http({
-  basenames: ['/api', '/v1']  // 可以有多个前缀
+// 访问 /users/abc 会自动返回 400 错误，因为 "abc" 不是有效整数
+app.get('/users/<id:int>').use((request) => {
+  // 这里 request.params.id 保证是 number 类型
+  return Response.json({ userId: request.params.id })
 })
 
-app.get('/posts')  // 实际匹配: /api/posts 和 /v1/posts
-```
-
-## Schema 定义与验证
-
-### 基础 Schema 定义
-
-```typescript
-import { ObjectType, String, Number, Boolean, Date, List, Optional, Nullable } from 'farrow-schema'
-
-// 定义博客文章 Schema
-class BlogPost extends ObjectType {
-  // 基础类型
-  id = Number
-  title = String
-  content = String
-  published = Boolean
-  createdAt = Date
+// 可选参数处理
+app.get('/posts/<id:int>/comments/<commentId?:int>').use((request) => {
+  const { id, commentId } = request.params
   
-  // 可选字段
-  description = Optional(String)  // string | undefined
-  
-  // 可为 null
-  publishedAt = Nullable(Date)    // Date | null
-  
-  // 数组
-  tags = List(String)              // string[]
-  
-  // 嵌套对象
-  author = {
-    id: Number,
-    name: String,
-    email: String,
-    avatar: Optional(String)
+  if (commentId) {
+    // 获取特定评论
+    return Response.json({ postId: id, commentId })
+  } else {
+    // 获取所有评论
+    return Response.json({ postId: id, comments: [] })
   }
+})
+```
+
+### 查询参数（Query）
+
+查询参数是 URL 中 `?` 后面的参数，同样支持类型验证：
+
+```typescript
+// 查询参数验证
+app.get('/users?<page?:int>&<limit?:int>').use((request) => {
+  const { page = 1, limit = 10 } = request.query
+  // page 和 limit 自动被验证为数字类型
   
-  // 嵌套数组
-  comments = List({
-    id: Number,
-    content: String,
-    author: String,
-    createdAt: Date
+  return Response.json({
+    users: [],
+    pagination: { page, limit }
   })
-}
-```
-
-### 高级 Schema 特性
-
-#### 联合类型
-
-```typescript
-import { Union, Literal } from 'farrow-schema'
-
-// 文章状态
-const PostStatus = Union(
-  Literal('draft'),
-  Literal('published'),
-  Literal('archived')
-)
-
-// 支付方式（复杂联合）
-const PaymentMethod = Union(
-  {
-    type: Literal('credit_card'),
-    cardNumber: String,
-    cvv: String,
-    expiryDate: String
-  },
-  {
-    type: Literal('paypal'),
-    email: String
-  },
-  {
-    type: Literal('bank_transfer'),
-    accountNumber: String,
-    routingNumber: String
-  }
-)
-```
-
-#### 递归 Schema
-
-```typescript
-// 评论系统（支持嵌套回复）
-class Comment extends ObjectType {
-  id = Number
-  content = String
-  author = String
-  createdAt = Date
-  replies = List(Comment)  // 递归引用自己
-}
-
-// 分类树
-class Category extends ObjectType {
-  id = Number
-  name = String
-  parent = Optional(Category)
-  children = List(Category)
-}
-```
-
-#### Schema 操作
-
-```typescript
-import { pickObject, omitObject, partial, required } from 'farrow-schema'
-
-// 完整的用户 Schema
-class User extends ObjectType {
-  id = Number
-  username = String
-  email = String
-  password = String
-  profile = {
-    firstName: String,
-    lastName: String,
-    bio: Optional(String),
-    avatar: Optional(String)
-  }
-  createdAt = Date
-  updatedAt = Date
-}
-
-// 选择特定字段
-const UserSummary = pickObject(User, ['id', 'username', 'profile'])
-
-// 排除敏感字段
-const PublicUser = omitObject(User, ['password'])
-
-// 所有字段可选（用于更新）
-const UpdateUser = partial(User)
-
-// 所有字段必需
-const RequiredUser = required(User)
-```
-
-### 自定义验证器
-
-```typescript
-import { ValidatorType, Validator } from 'farrow-schema/validator'
-
-// 邮箱验证器
-class EmailType extends ValidatorType<string> {
-  validate(input: unknown) {
-    const result = Validator.validate(String, input)
-    if (result.isErr) return result
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(result.value)) {
-      return this.Err('Invalid email format')
-    }
-    
-    return this.Ok(result.value)
-  }
-}
-
-// 带参数的验证器
-const StringLength = (min: number, max: number) => {
-  return class extends ValidatorType<string> {
-    validate(input: unknown) {
-      const result = Validator.validate(String, input)
-      if (result.isErr) return result
-      
-      const len = result.value.length
-      if (len < min || len > max) {
-        return this.Err(`Length must be between ${min} and ${max}`)
-      }
-      
-      return this.Ok(result.value)
-    }
-  }
-}
-
-// 使用自定义验证器
-class CreateUserRequest extends ObjectType {
-  username = StringLength(3, 20)
-  email = EmailType
-  password = StringLength(8, 100)
-}
-```
-
-### 请求验证
-
-```typescript
-// 验证请求体
-app.post('/posts', {
-  body: {
-    title: StringLength(1, 200),
-    content: String,
-    tags: List(String),
-    published: Boolean
-  }
-}).use((request) => {
-  // request.body 已验证，类型安全
-  const post = createPost(request.body)
-  return Response.status(201).json(post)
 })
 
-// 验证查询参数
-app.get('/search', {
-  query: {
-    q: String,
-    page: Optional(Number),
-    limit: Optional(Number)
-  }
-}).use((request) => {
-  const { q, page = 1, limit = 10 } = request.query
-  return Response.json(search(q, { page, limit }))
-})
-
-// 验证请求头
-app.post('/api/posts', {
-  headers: {
-    'authorization': String,
-    'content-type': Literal('application/json')
-  },
-  body: CreatePostRequest
-}).use((request) => {
-  const token = request.headers.authorization
-  // 处理请求...
+// 必需的查询参数
+app.get('/search?<q:string>&<page?:int>').use((request) => {
+  const { q, page = 1 } = request.query
+  // q 是必需的字符串，page 是可选的数字
+  
+  return Response.json({
+    query: q,
+    page,
+    results: []
+  })
 })
 ```
 
-### 错误处理
+### 组合路径参数和查询参数
 
 ```typescript
-// 自定义验证错误处理
-app.post('/users', {
-  body: CreateUserRequest
-}, {
-  onSchemaError: (error, input, next) => {
-    // error.path: ['body', 'email']
-    // error.message: 'Invalid email format'
-    
-    return Response.status(400).json({
-      error: 'Validation failed',
-      field: error.path?.join('.'),
-      message: error.message,
-      received: error.value
+// 同时使用路径参数和查询参数
+app.get('/users/<id:int>?<include?:string>').use((request) => {
+  const { id } = request.params           // number
+  const { include } = request.query       // string | undefined
+  
+  const user = { id, name: `用户 ${id}`, email: `user${id}@example.com` }
+  
+  if (include === 'posts') {
+    return Response.json({
+      ...user,
+      posts: [`文章 1`, `文章 2`]
     })
   }
-}).use((request) => {
-  // 只有验证通过才会执行这里
-  return Response.status(201).json(createUser(request.body))
+  
+  return Response.json(user)
+})
+
+// 复杂的组合示例
+app.get('/categories/<category:string>/products?<sort?:string>&<page?:int>&<limit?:int>').use((request) => {
+  const { category } = request.params
+  const { sort = 'name', page = 1, limit = 20 } = request.query
+  
+  return Response.json({
+    category,
+    sort,
+    pagination: { page, limit },
+    products: []
+  })
 })
 ```
 
-## 中间件系统
+## 深入理解响应
 
-### 中间件基础
-
-```typescript
-// farrow-http 中间件的类型定义
-type HttpMiddleware = (
-  request: RequestInfo, 
-  next: Next<RequestInfo, MaybeAsyncResponse>
-) => MaybeAsyncResponse
-
-type Next<I = unknown, O = unknown> = (input: I) => O
-type MaybeAsyncResponse = Response | Promise<Response>
-
-// 基础中间件示例
-app.use((request, next) => {
-  console.log(`${request.method} ${request.pathname}`)
-  return next(request)  // 调用下一个中间件并返回响应
-})
-
-// 需要处理响应的中间件（使用异步）
-app.use(async (request, next) => {
-  const start = Date.now()
-  const response = await next(request)  // 等待响应
-  console.log(`处理耗时: ${Date.now() - start}ms`)
-  return response
-})
-```
-
-### 常用中间件模式
-
-#### 日志中间件
+Farrow 提供了丰富的响应构建 API：
 
 ```typescript
-import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
+import { Response } from 'farrow-http'
 
-// 日志中间件 - 需要异步处理以正确计算响应时间
-const logger: HttpMiddleware = async (request, next) => {
-  const start = Date.now()
-  const { method, pathname } = request
-  
-  console.log(`→ ${method} ${pathname}`)
-  
-  const response = await next(request)  // 等待响应完成
-  
-  const duration = Date.now() - start
-  const status = response.info.status?.code || 200
-  
-  console.log(`← ${method} ${pathname} ${status} ${duration}ms`)
-  
-  return response
-}
-
-app.use(logger)
-```
-
-#### 认证中间件
-
-```typescript
-import { createContext } from 'farrow-pipeline'
-import { RequestInfo, Response, MaybeAsyncResponse, HttpMiddleware } from 'farrow-http'
-
-const UserContext = createContext<User | null>(null)
-
-// 认证中间件 - 通常需要异步查询数据库
-const authenticate: HttpMiddleware = async (request, next) => {
-  const token = request.headers?.authorization?.replace('Bearer ', '')
-  
-  if (!token) {
-    return Response.status(401).json({ error: 'Token required' })
-  }
-  
-  try {
-    const payload = jwt.verify(token, SECRET_KEY)
-    const user = await getUserById(payload.userId)  // 异步查询用户
-    
-    if (!user) {
-      return Response.status(401).json({ error: 'User not found' })
-    }
-    
-    UserContext.set(user)
-    return next(request)
-  } catch (error) {
-    return Response.status(401).json({ error: 'Invalid token' })
-  }
-}
-
-// 应用到特定路由
-app.use('/api/<path*:string>', authenticate)
-```
-
-#### CORS 中间件
-
-```typescript
-import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
-
-interface CorsOptions {
-  origin?: string
-  methods?: string[]
-  headers?: string[]
-  credentials?: boolean
-}
-
-// 返回一个中间件函数
-const cors = (options: CorsOptions = {}): HttpMiddleware => {
-  const {
-    origin = '*',
-    methods = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    headers = ['Content-Type', 'Authorization'],
-    credentials = true
-  } = options
-  
-  return (request, next) => {
-    // 处理预检请求
-    if (request.method === 'OPTIONS') {
-      return Response.empty()
-        .header('Access-Control-Allow-Origin', origin)
-        .header('Access-Control-Allow-Methods', methods.join(', '))
-        .header('Access-Control-Allow-Headers', headers.join(', '))
-        .header('Access-Control-Allow-Credentials', String(credentials))
-    }
-    
-    // 添加 CORS 头到响应
-    const response = next(request)
-    
-    return response
-      .header('Access-Control-Allow-Origin', origin)
-      .header('Access-Control-Allow-Credentials', String(credentials))
-  }
-}
-
-app.use(cors({ origin: 'https://example.com' }))
-```
-
-#### 限流中间件
-
-```typescript
-import { RequestInfo, Response, HttpMiddleware } from 'farrow-http'
-
-// 高阶函数，返回配置好的中间件
-const rateLimit = (maxRequests = 100, windowMs = 60000): HttpMiddleware => {
-  const requests = new Map<string, number[]>()
-  
-  return (request, next) => {
-    const ip = request.ip || 'unknown'
-    const now = Date.now()
-    
-    // 获取或初始化请求记录
-    const timestamps = requests.get(ip) || []
-    
-    // 清理过期的请求记录
-    const validTimestamps = timestamps.filter(
-      time => now - time < windowMs
-    )
-    
-    // 检查是否超过限制
-    if (validTimestamps.length >= maxRequests) {
-      return Response.status(429).json({
-        error: 'Too many requests',
-        retryAfter: Math.ceil(windowMs / 1000)
-      })
-    }
-    
-    // 记录新请求
-    validTimestamps.push(now)
-    requests.set(ip, validTimestamps)
-    
-    // 添加限流信息到响应头
-    const response = next(request)
-    
-    return response
-      .header('X-RateLimit-Limit', String(maxRequests))
-      .header('X-RateLimit-Remaining', String(maxRequests - validTimestamps.length))
-      .header('X-RateLimit-Reset', String(now + windowMs))
-  }
-}
-
-app.use(rateLimit(100, 60000))  // 每分钟 100 个请求
-```
-
-### 中间件组合
-
-```typescript
-// 创建中间件组
-const apiMiddlewares = [
-  logger,
-  cors(),
-  rateLimit(1000, 60000),
-  authenticate
-]
-
-// 应用到特定路由组
-const apiRouter = Router()
-
-// use 方法支持多个中间件参数，可以直接展开数组
-apiRouter.use(...apiMiddlewares)
-
-// 或者链式调用
-apiRouter
-  .use(logger)
-  .use(cors())
-  .use(rateLimit(1000, 60000))
-  .use(authenticate)
-
-// 添加子路由
-apiRouter.route('/posts').use(postsRouter)
-apiRouter.route('/users').use(usersRouter)
-
-// 挂载到主应用
-app.route('/api').use(apiRouter)
-```
-
-## 响应构建
-
-### 基础响应类型
-
-```typescript
-// JSON 响应（最常用）
-app.get('/data').use(() => {
-  return Response.json({ message: 'Hello', data: [1, 2, 3] })
-})
+// JSON 响应
+Response.json({ message: 'Hello' })
 
 // 文本响应
-app.get('/text').use(() => {
-  return Response.text('Plain text response')
-})
+Response.text('纯文本内容')
 
 // HTML 响应
-app.get('/html').use(() => {
-  return Response.html(`
-    <!DOCTYPE html>
-    <html>
-      <head><title>Farrow</title></head>
-      <body><h1>Hello Farrow!</h1></body>
-    </html>
-  `)
-})
+Response.html('<h1>HTML 内容</h1>')
 
-// 空响应（204 No Content）
-app.delete('/items/<id:int>').use((request) => {
-  deleteItem(request.params.id)
-  return Response.empty()
-})
+// 自定义状态码
+Response.status(201).json({ created: true })
+
+// 设置响应头
+Response.header('X-Custom-Header', 'value').json({ data: 'test' })
+
+// 设置多个响应头
+Response.headers({
+  'X-API-Version': '1.0',
+  'X-Rate-Limit': '100'
+}).json({ data: 'test' })
+
+// 设置 Cookie
+Response.cookie('session', 'abc123').json({ authenticated: true })
 ```
 
-### 文件响应
+### Response 合并注意事项
+
+在使用多个中间件时需要注意 Response 合并的规则：
+
+::: warning ⚠️ 重要规则
+`Response.merge()` 中**后面的响应会覆盖前面的响应主体**！
+:::
 
 ```typescript
-// 发送文件
-app.get('/download/<filename:string>').use((request) => {
-  const filepath = path.join('./uploads', request.params.filename)
-  return Response.file(filepath)
-})
+// ❌ 错误：JSON 数据会丢失
+const withData = Response.json({ users: ['Alice', 'Bob'] })
+const withHeaders = Response.header('X-Version', 'v1')  // 空主体
+const result = withData.merge(withHeaders)  // 数据被空主体覆盖！
 
-// 文件下载（带附件名）
-app.get('/export').use(() => {
-  return Response
-    .file('./data/export.csv')
-    .attachment('report-2024.csv')  // 设置下载文件名
-})
+// ✅ 正确做法：使用链式调用
+const result = Response.json({ users: ['Alice', 'Bob'] }).header('X-Version', 'v1')
 
-// 内联显示（如 PDF）
-app.get('/preview/<id:int>').use((request) => {
-  const file = getFile(request.params.id)
-  return Response
-    .file(file.path)
-    .header('Content-Disposition', 'inline')
-})
+// ✅ 或者注意合并顺序
+const result = withHeaders.merge(withData)  // 空主体被 JSON 覆盖
 ```
 
-### 重定向
+**最佳实践**：优先使用链式调用，避免 `merge()` 导致的数据丢失。
 
 ```typescript
-// 基础重定向
-app.get('/old-path').use(() => {
-  return Response.redirect('/new-path')
-})
-
-// 永久重定向（301）
-app.get('/permanent').use(() => {
-  return Response.redirect('/new-location', { 
-    status: 301 
-  })
-})
-
-// 外部重定向
-app.get('/external').use(() => {
-  return Response.redirect('https://example.com', {
-    usePrefix: false  // 不使用应用前缀
-  })
-})
-```
-
-### 响应链式构建
-
-```typescript
-// 链式设置响应属性
-app.post('/api/users').use((request) => {
-  const user = createUser(request.body)
-  
-  return Response
-    .json(user)
-    .status(201)
-    .header('Location', `/api/users/${user.id}`)
-    .header('X-Total-Count', '100')
-    .cookie('lastUserId', user.id, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      maxAge: 86400000  // 24 小时
-    })
-    .vary('Accept-Encoding')
-})
-
-// 设置多个 Cookie
-app.get('/login').use(() => {
-  return Response
-    .json({ message: 'Logged in' })
-    .cookie('sessionId', generateSessionId(), {
-      httpOnly: true,
-      secure: true
-    })
-    .cookie('username', 'john', {
-      maxAge: 86400000
-    })
-})
-```
-
-### 响应合并 - Response.merge
-
-`Response.merge` 允许你合并多个响应的属性，这在中间件组合中特别有用：
-
-#### ⚠️ Response 合并注意事项
-
-由于最初设计遗漏，Response 合并时需要注意顺序：
-
-```typescript
-// ⚠️ 重要：Response.merge 遵循"后者覆盖前者"原则
-
-// ❌ 错误：将有body的响应放前面，会被空body覆盖
-Response.text('Hello').merge(Response.cookie('token', '123'))
-// 结果：只有cookie，文本内容丢失！
-
-// ✅ 正确：链式调用
-Response.text('Hello').cookie('token', '123')
-
-// ✅ 正确：空响应在前，有body的响应在后
-Response.cookie('token', '123').merge(Response.text('Hello'))
-```
-
-```typescript
-// Response.merge 的基本用法
-app.get('/api/data').use(() => {
-  const headersResponse = Response
-    .header('X-Custom', 'value')
-    .header('X-Request-ID', generateId())
-  const dataResponse = Response.json({ data: 'value' })
-  
-  // 正确：headers响应(空body)在前，data响应(有body)在后
-  return headersResponse.merge(dataResponse)
-})
-
-// 在中间件中使用 Response.merge
-const addSecurityHeaders = (request, next) => {
+// ✅ 推荐：在中间件中使用链式调用
+app.use((request, next) => {
   const response = next(request)
-  
-  // 创建包含安全头的响应（空body）
-  const securityHeaders = Response
-    .header('X-Content-Type-Options', 'nosniff')
-    .header('X-Frame-Options', 'DENY')
-    .header('X-XSS-Protection', '1; mode=block')
-  
-  // 正确：安全头(空body)在前，原响应在后
-  return securityHeaders.merge(response)
-}
+  return response.header('X-API-Version', '1.0')  // 直接添加 header
+})
+```
 
-// 条件性合并响应
-app.get('/api/profile').use((request) => {
-  const user = getUserProfile()
-  const baseResponse = Response.json(user)
+## 理解中间件
+
+中间件是 Farrow 的核心概念。它们是可以访问请求对象、响应对象，以及应用程序请求-响应循环中的下一个中间件的函数。
+
+### 简单中间件
+
+```typescript
+const app = Http()
+
+// 记录所有请求
+app.use((request, next) => {
+  console.log(`${request.method} ${request.url}`)
+  return next(request)
+})
+
+app.get('/').use(() => {
+  return Response.text('Hello')
+})
+```
+
+### 条件中间件
+
+```typescript
+// 只在特定路径使用中间件
+app.get('/protected').use((request, next) => {
+  const token = request.headers.authorization
   
-  // 根据条件添加额外的响应属性
-  if (user.isAdmin) {
-    const adminHeaders = Response.header('X-Admin-Access', 'true')
-    return adminHeaders.merge(baseResponse)  // 正确：空body在前
+  if (!token) {
+    return Response.status(401).json({ error: '需要认证' })
   }
   
-  return baseResponse
-})
-
-// 合并多个响应
-app.get('/api/resource').use(() => {
-  const data = Response.json({ result: 'success' })
-  const status = Response.status(201)
-  const headers = Response
-    .header('Location', '/api/resource/123')
-    .header('X-Resource-ID', '123')
-  const cookies = Response.cookie('lastResourceId', '123')
-  
-  // 正确：将有body的响应放在最后
-  return Response.merge(status, headers, cookies, data)
+  return next(request)
+}).use(() => {
+  return Response.json({ message: '你已通过认证' })
 })
 ```
 
-### 流式响应
+## 使用 Context
 
-```typescript
-import { Readable } from 'stream'
-
-// 发送流
-app.get('/stream').use(() => {
-  const stream = fs.createReadStream('./large-file.json')
-  
-  return Response
-    .stream(stream)
-    .header('Content-Type', 'application/json')
-    .header('Transfer-Encoding', 'chunked')
-})
-
-// Server-Sent Events (SSE)
-app.get('/events').use(() => {
-  const stream = new Readable({
-    read() {
-      // 每秒发送一个事件
-      const interval = setInterval(() => {
-        this.push(`data: ${JSON.stringify({ time: Date.now() })}\n\n`)
-      }, 1000)
-      
-      // 10 秒后结束
-      setTimeout(() => {
-        clearInterval(interval)
-        this.push(null)
-      }, 10000)
-    }
-  })
-  
-  return Response
-    .stream(stream)
-    .header('Content-Type', 'text/event-stream')
-    .header('Cache-Control', 'no-cache')
-    .header('Connection', 'keep-alive')
-})
-```
-
-## Context 系统
+Context 是 Farrow 中用于在中间件之间共享数据的强大机制。你可以把它想象成一个请求范围内的全局状态。
 
 ### 创建和使用 Context
 
 ```typescript
 import { createContext } from 'farrow-pipeline'
 
-// 创建各种 Context
-const UserContext = createContext<User | null>(null)
-const DatabaseContext = createContext<Database>()
-const RequestIdContext = createContext<string>('')
-const ConfigContext = createContext({
-  apiUrl: 'https://api.example.com',
-  timeout: 5000
+// 创建用户上下文
+const UserContext = createContext<{ id: number; name: string } | null>(null)
+
+// 在中间件中设置用户信息
+app.use((request, next) => {
+  // 模拟从 token 中解析用户信息
+  const token = request.headers.authorization
+  if (token) {
+    UserContext.set({ id: 123, name: 'Alice' })
+  }
+  return next(request)
 })
 
-// 在中间件中设置 Context
+// 在路由中获取用户信息
+app.get('/profile').use((request) => {
+  const user = UserContext.get()
+  
+  if (!user) {
+    return Response.status(401).json({ error: '需要登录' })
+  }
+  
+  return Response.json({
+    message: `欢迎，${user.name}！`,
+    userId: user.id
+  })
+})
+```
+
+::: tip 💡 Context 的特点
+每个请求都有独立的 Context 容器，不会互相干扰。这意味着即使在高并发情况下，每个请求的用户信息都是隔离的。
+:::
+
+### 实际应用：用户认证
+
+让我们看一个完整的用户认证示例：
+
+```typescript
+import { createContext } from 'farrow-pipeline'
+
+// 定义用户类型
+class User extends ObjectType {
+  id = Number
+  name = String
+  email = String
+}
+
+// 创建用户上下文
+const AuthContext = createContext<User | null>(null)
+
+// 认证中间件
+const authenticate = (request: any, next: any) => {
+  const token = request.headers.authorization?.replace('Bearer ', '')
+  
+  if (!token) {
+    return Response.status(401).json({ error: '缺少认证令牌' })
+  }
+  
+  // 验证 token（这里简化处理）
+  if (token === 'valid-token') {
+    AuthContext.set({
+      id: 1,
+      name: 'Alice',
+      email: 'alice@example.com'
+    })
+    return next(request)
+  } else {
+    return Response.status(401).json({ error: '无效令牌' })
+  }
+}
+
+// 需要认证的路由
+app.get('/me').use(authenticate).use((request) => {
+  const user = AuthContext.get() // 肯定不为空，因为通过了认证中间件
+  return Response.json(user)
+})
+
+app.get('/posts').use(authenticate).use((request) => {
+  const user = AuthContext.get()
+  return Response.json({
+    message: `${user.name} 的文章列表`,
+    posts: []
+  })
+})
+
+// 公开路由（不需要认证）
+app.get('/').use(() => {
+  return Response.json({ message: '欢迎访问我们的 API' })
+})
+```
+
+### 多个 Context
+
+你可以同时使用多个 Context 来管理不同类型的数据：
+
+```typescript
+// 创建多个上下文
+const UserContext = createContext<User | null>(null)
+const RequestIdContext = createContext<string>()
+const TimerContext = createContext<number>()
+
 app.use((request, next) => {
-  // 设置请求 ID
-  const requestId = crypto.randomUUID()
-  RequestIdContext.set(requestId)
+  // 生成请求 ID
+  RequestIdContext.set(Math.random().toString(36))
   
-  // 设置数据库连接
-  const db = createDatabaseConnection()
-  DatabaseContext.set(db)
+  // 记录请求开始时间
+  TimerContext.set(Date.now())
   
-  // 继续处理
+  console.log(`请求开始: ${RequestIdContext.get()}`)
+  
   const response = next(request)
   
-  // 清理（如果需要）
-  db.close()
+  // 计算请求耗时
+  const duration = Date.now() - TimerContext.get()
+  console.log(`请求结束: ${RequestIdContext.get()}, 耗时: ${duration}ms`)
   
   return response
 })
-
-// 在路由中使用 Context
-app.get('/profile').use(() => {
-  const user = UserContext.get()
-  const db = DatabaseContext.get()
-  const requestId = RequestIdContext.get()
-  
-  if (!user) {
-    return Response.status(401).json({ 
-      error: 'Not authenticated',
-      requestId 
-    })
-  }
-  
-  const profile = db.getProfile(user.id)
-  
-  return Response
-    .json(profile)
-    .header('X-Request-ID', requestId)
-})
-```
-
-### 自定义 Hooks
-
-```typescript
-// 创建可复用的 Hooks
-function useCurrentUser() {
-  const user = UserContext.get()
-  if (!user) {
-    throw new HttpError('Authentication required', 401)
-  }
-  return user
-}
-
-function useDatabase() {
-  const db = DatabaseContext.get()
-  if (!db) {
-    throw new Error('Database not initialized')
-  }
-  return db
-}
-
-function useRequestId() {
-  return RequestIdContext.get()
-}
-
-// 组合 Hooks
-function useAuthenticatedRequest() {
-  const user = useCurrentUser()
-  const db = useDatabase()
-  const requestId = useRequestId()
-  
-  return { user, db, requestId }
-}
-
-// 在路由中使用 Hooks
-app.get('/api/posts').use(() => {
-  const { user, db } = useAuthenticatedRequest()
-  
-  const posts = db.getPostsByUser(user.id)
-  
-  return Response.json(posts)
-})
-
-app.post('/api/posts', {
-  body: CreatePostSchema
-}).use((request) => {
-  const { user, db } = useAuthenticatedRequest()
-  
-  const post = db.createPost({
-    ...request.body,
-    authorId: user.id
-  })
-  
-  return Response.status(201).json(post)
-})
-```
-
-### Context 隔离
-
-```typescript
-// 每个请求都有独立的 Context
-const CounterContext = createContext(0)
-
-app.use((request, next) => {
-  // 每个请求从 0 开始
-  CounterContext.set(0)
-  return next(request)
-})
-
-app.use((request, next) => {
-  const count = CounterContext.get()
-  CounterContext.set(count + 1)
-  console.log(`Middleware 1: ${count + 1}`)
-  return next(request)
-})
-
-app.use((request, next) => {
-  const count = CounterContext.get()
-  CounterContext.set(count + 1)
-  console.log(`Middleware 2: ${count + 1}`)
-  return next(request)
-})
-
-// 并发请求不会相互影响
-// 请求 A: Middleware 1: 1, Middleware 2: 2
-// 请求 B: Middleware 1: 1, Middleware 2: 2
 ```
 
 ## 错误处理
 
-### 使用 HttpError
+Farrow 提供了优雅的错误处理方式：
 
 ```typescript
-import { HttpError } from 'farrow-http'
-
-// 基础 HttpError
-app.get('/users/<id:int>').use((request) => {
-  const user = getUser(request.params.id)
-  
-  if (!user) {
-    throw new HttpError('User not found', 404)
-  }
-  
-  return Response.json(user)
-})
-
-// 自定义错误类
-class ValidationError extends HttpError {
-  constructor(
-    public field: string,
-    message: string
-  ) {
-    super(message, 400)
-    this.name = 'ValidationError'
-  }
-}
-
-class UnauthorizedError extends HttpError {
-  constructor(message = 'Unauthorized') {
-    super(message, 401)
-    this.name = 'UnauthorizedError'
-  }
-}
-
-class ForbiddenError extends HttpError {
-  constructor(resource: string) {
-    super(`Access to ${resource} is forbidden`, 403)
-    this.name = 'ForbiddenError'
-  }
-}
-
-// 使用自定义错误
-app.post('/posts').use((request) => {
-  if (!request.body.title) {
-    throw new ValidationError('title', 'Title is required')
-  }
-  
-  const user = useCurrentUser()
-  if (!user.canCreatePost) {
-    throw new ForbiddenError('posts')
-  }
-  
-  // ...
-})
-```
-
-### 全局错误处理
-
-```typescript
-// 错误处理中间件（放在最前面） - 统一使用 async/await
-app.use(async (request, next) => {
+// 全局错误处理
+app.use((request, next) => {
   try {
-    return await next(request)
+    return next(request)
   } catch (error) {
-    // 处理所有错误（同步和异步）
-    return handleError(error)
-  }
-})
-
-// 处理异步错误
-app.use(async (request, next) => {
-  try {
-    const response = await next(request)
-    return response
-  } catch (error) {
-    return handleError(error)
-  }
-})
-
-function handleError(error: unknown): Response {
-  // 已知的 HTTP 错误
-  if (error instanceof HttpError) {
-    return Response.status(error.status).json({
-      error: error.message,
-      status: error.status
-    })
-  }
-  
-  // 验证错误
-  if (error instanceof ValidationError) {
-    return Response.status(400).json({
-      error: 'Validation failed',
-      field: error.field,
-      message: error.message
-    })
-  }
-  
-  // 数据库错误
-  if (error instanceof DatabaseError) {
-    console.error('Database error:', error)
-    return Response.status(503).json({
-      error: 'Service temporarily unavailable'
-    })
-  }
-  
-  // 未知错误
-  console.error('Unexpected error:', error)
-  
-  if (process.env.NODE_ENV === 'production') {
+    console.error('发生错误:', error)
     return Response.status(500).json({
-      error: 'Internal server error'
-    })
-  } else {
-    // 开发环境返回详细错误
-    return Response.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
-    })
-  }
-}
-```
-
-### Schema 验证错误处理
-
-```typescript
-// 全局 Schema 错误处理
-app.match({
-  url: '/<path*:string>',
-  onSchemaError: (error, input, next) => {
-    const field = error.path?.join('.')
-    
-    return Response.status(400).json({
-      error: 'Validation failed',
-      details: {
-        field,
-        message: error.message,
-        value: error.value
-      }
+      error: '服务器内部错误'
     })
   }
 })
 
-// 特定路由的错误处理
-app.post('/users', {
-  body: CreateUserSchema
-}, {
-  onSchemaError: (error, input, next) => {
-    // 自定义错误响应
-    if (error.path?.includes('email')) {
-      return Response.status(400).json({
-        error: 'Invalid email address',
-        suggestion: 'Please use a valid email format'
-      })
-    }
-    
-    return Response.status(400).json({
-      error: error.message
-    })
-  }
-})
-```
-
-## 实战：构建完整的博客 API
-
-让我们综合运用所学知识，构建一个完整的博客 API：
-
-```typescript
-import { Http, Response, Router, HttpError } from 'farrow-http'
-import { ObjectType, String, Number, Boolean, Date, List, Optional, TypeOf } from 'farrow-schema'
-import { createContext } from 'farrow-pipeline'
-import { Validator, ValidatorType } from 'farrow-schema/validator'
-
-// ========== Schema 定义 ==========
-
-// 自定义验证器
-class EmailType extends ValidatorType<string> {
-  validate(input: unknown) {
-    const result = Validator.validate(String, input)
-    if (result.isErr) return result
-    
-    if (!input.includes('@')) {
-      return this.Err('Invalid email')
-    }
-    
-    return this.Ok(result.value)
-  }
-}
-
-const StringLength = (min: number, max: number) => {
-  return class extends ValidatorType<string> {
-    validate(input: unknown) {
-      const result = Validator.validate(String, input)
-      if (result.isErr) return result
-      
-      if (result.value.length < min || result.value.length > max) {
-        return this.Err(`Length must be ${min}-${max} characters`)
-      }
-      
-      return this.Ok(result.value)
-    }
-  }
-}
-
-// 数据模型
-class User extends ObjectType {
-  id = Number
-  username = StringLength(3, 20)
-  email = EmailType
-  role = Union(Literal('admin'), Literal('author'), Literal('reader'))
-  createdAt = Date
-}
-
-class BlogPost extends ObjectType {
-  id = Number
-  title = StringLength(1, 200)
-  slug = String
-  content = String
-  excerpt = Optional(String)
-  authorId = Number
-  published = Boolean
-  tags = List(String)
-  createdAt = Date
-  updatedAt = Date
-}
-
-class Comment extends ObjectType {
-  id = Number
-  postId = Number
-  content = StringLength(1, 1000)
-  authorName = String
-  authorEmail = EmailType
-  createdAt = Date
-}
-
-// API 请求/响应 Schema
-const CreatePostRequest = pickObject(BlogPost, ['title', 'content', 'excerpt', 'tags'])
-const UpdatePostRequest = partial(CreatePostRequest)
-const PostResponse = omitObject(BlogPost, ['authorId'])
-
-// ========== Context ==========
-
-const UserContext = createContext<User | null>(null)
-const DatabaseContext = createContext<Database>()
-
-// ========== 自定义 Hooks ==========
-
-function useCurrentUser() {
-  const user = UserContext.get()
-  if (!user) {
-    throw new HttpError('Authentication required', 401)
-  }
-  return user
-}
-
-function useDatabase() {
-  const db = DatabaseContext.get()
-  if (!db) {
-    throw new Error('Database not initialized')
-  }
-  return db
-}
-
-// ========== 中间件 ==========
-
-// 日志中间件
-const logger = (request, next) => {
-  const start = Date.now()
-  console.log(`→ ${request.method} ${request.pathname}`)
-  
+// 处理 404
+app.use((request, next) => {
   const response = next(request)
   
-  const duration = Date.now() - start
-  console.log(`← ${response.info.status?.code} (${duration}ms)`)
+  // 如果没有路由匹配
+  if (!response) {
+    return Response.status(404).json({
+      error: '页面未找到'
+    })
+  }
   
   return response
-}
+})
+```
 
-// 认证中间件
-const authenticate = (request, next) => {
-  const token = request.headers?.authorization?.replace('Bearer ', '')
-  
-  if (!token) {
-    return next(request)  // 继续，但不设置用户
-  }
-  
-  try {
-    const user = verifyToken(token)
-    UserContext.set(user)
-  } catch {
-    // 无效 token，继续但不设置用户
-  }
-  
-  return next(request)
-}
+## 模块化你的应用
 
-// 需要认证的中间件
-const requireAuth = (request, next) => {
-  const user = UserContext.get()
-  
-  if (!user) {
-    return Response.status(401).json({ error: 'Authentication required' })
-  }
-  
-  return next(request)
-}
+随着应用的增长，你可以将路由分组到模块中：
 
-// 需要特定角色
-const requireRole = (role: string) => (request, next) => {
-  const user = useCurrentUser()
-  
-  if (user.role !== role && user.role !== 'admin') {
-    return Response.status(403).json({ error: 'Insufficient permissions' })
-  }
-  
-  return next(request)
-}
+```typescript
+import { Router } from 'farrow-http'
 
-// ========== 路由 ==========
+// 创建用户路由模块
+const userRouter = Router()
 
-const app = Http()
+userRouter.get('/').use(() => {
+  return Response.json({ users: [] })
+})
 
-// 全局中间件
-app.use(logger)
-app.use(authenticate)
-
-// 公开路由
-app.get('/').use(() => {
+userRouter.get('/<id:int>').use((request) => {
   return Response.json({ 
-    message: 'Blog API',
-    version: '1.0.0'
+    id: request.params.id,
+    name: '用户'
   })
 })
 
-// 文章路由
-const postsRouter = Router()
+// 在主应用中使用
+app.route('/users').use(userRouter)
+```
 
-// 获取文章列表
-postsRouter.get('/?<page?:int>&<limit?:int>&<tag?:string>').use((request) => {
-  const { page = 1, limit = 10, tag } = request.query
-  const db = useDatabase()
+## 完整示例：博客 API
+
+让我们创建一个完整的示例，将所有学到的概念组合起来：
+
+```typescript
+import { Http, Response } from 'farrow-http'
+import { ObjectType, String, Number, Optional, List } from 'farrow-schema'
+import { createContext } from 'farrow-pipeline'
+
+// 1. 定义数据结构
+class User extends ObjectType {
+  id = Number
+  name = String
+  email = String
+}
+
+class Post extends ObjectType {
+  id = Number
+  title = String
+  content = String
+  authorId = Number
+}
+
+class CreatePostInput extends ObjectType {
+  title = String
+  content = String
+}
+
+// 2. 创建 Context
+const AuthContext = createContext<User | null>(null)
+
+// 3. 认证中间件
+const authenticate = (request: any, next: any) => {
+  const token = request.headers.authorization?.replace('Bearer ', '')
   
-  const posts = db.getPosts({ page, limit, tag })
-  const total = db.getPostCount({ tag })
+  if (token === 'user-token') {
+    AuthContext.set({ id: 1, name: 'Alice', email: 'alice@example.com' })
+    return next(request)
+  }
+  
+  return Response.status(401).json({ error: '需要认证' })
+}
+
+// 4. 创建应用
+const app = Http()
+
+// 全局中间件：请求日志
+app.use((request, next) => {
+  console.log(`${request.method} ${request.pathname}`)
+  return next(request)
+})
+
+// 5. 公开路由
+app.get('/').use(() => {
+  return Response.json({ 
+    message: '欢迎来到博客 API',
+    endpoints: ['/posts', '/posts/<id:int>', '/me', '/my-posts']
+  })
+})
+
+// 获取所有文章（带分页）
+app.get('/posts?<page?:int>&<limit?:int>').use((request) => {
+  const { page = 1, limit = 10 } = request.query
+  
+  // 模拟数据
+  const posts = [
+    { id: 1, title: '第一篇文章', content: '内容...', authorId: 1 },
+    { id: 2, title: '第二篇文章', content: '内容...', authorId: 1 }
+  ]
   
   return Response.json({
     posts,
-    pagination: {
-      page,
-      limit,
-      total,
-      pages: Math.ceil(total / limit)
-    }
+    pagination: { page, limit, total: posts.length }
   })
 })
 
 // 获取单篇文章
-postsRouter.get('/<id:int>').use((request) => {
-  const db = useDatabase()
-  const post = db.getPost(request.params.id)
-  
-  if (!post) {
-    throw new HttpError('Post not found', 404)
+app.get('/posts/<id:int>').use((request) => {
+  const post = { 
+    id: request.params.id, 
+    title: `文章 ${request.params.id}`, 
+    content: '这是文章内容...',
+    authorId: 1
   }
   
   return Response.json(post)
 })
 
-// 创建文章（需要认证 + 作者角色）
-postsRouter.post('/', {
-  body: CreatePostRequest
+// 6. 需要认证的路由
+app.get('/me').use(authenticate).use(() => {
+  const user = AuthContext.get()
+  return Response.json(user)
 })
-  .use(requireAuth)
-  .use(requireRole('author'))
-  .use((request) => {
-    const user = useCurrentUser()
-    const db = useDatabase()
-    
-    const post = db.createPost({
-      ...request.body,
-      authorId: user.id,
-      slug: generateSlug(request.body.title),
-      published: false,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    })
-    
-    return Response
-      .status(201)
-      .json(post)
-      .header('Location', `/api/posts/${post.id}`)
-  })
 
-// 更新文章
-postsRouter.put('/<id:int>', {
-  body: UpdatePostRequest
-})
-  .use(requireAuth)
-  .use((request) => {
-    const user = useCurrentUser()
-    const db = useDatabase()
-    const post = db.getPost(request.params.id)
-    
-    if (!post) {
-      throw new HttpError('Post not found', 404)
-    }
-    
-    // 只有作者或管理员可以编辑
-    if (post.authorId !== user.id && user.role !== 'admin') {
-      throw new HttpError('Forbidden', 403)
-    }
-    
-    const updated = db.updatePost(request.params.id, {
-      ...request.body,
-      updatedAt: new Date()
-    })
-    
-    return Response.json(updated)
-  })
-
-// 删除文章
-postsRouter.delete('/<id:int>')
-  .use(requireAuth)
-  .use((request) => {
-    const user = useCurrentUser()
-    const db = useDatabase()
-    const post = db.getPost(request.params.id)
-    
-    if (!post) {
-      throw new HttpError('Post not found', 404)
-    }
-    
-    if (post.authorId !== user.id && user.role !== 'admin') {
-      throw new HttpError('Forbidden', 403)
-    }
-    
-    db.deletePost(request.params.id)
-    
-    return Response.empty()
-  })
-
-// 评论路由
-const commentsRouter = Router()
-
-// 获取文章评论
-commentsRouter.get('/posts/<postId:int>/comments').use((request) => {
-  const db = useDatabase()
-  const comments = db.getCommentsByPost(request.params.postId)
+app.get('/my-posts').use(authenticate).use(() => {
+  const user = AuthContext.get()
+  const posts = [
+    { id: 1, title: '我的文章', content: '内容...', authorId: user!.id }
+  ]
   
-  return Response.json(comments)
+  return Response.json({
+    user: user!.name,
+    posts
+  })
 })
 
-// 添加评论
-commentsRouter.post('/posts/<postId:int>/comments', {
-  body: {
-    content: StringLength(1, 1000),
-    authorName: String,
-    authorEmail: EmailType
-  }
-}).use((request) => {
-  const db = useDatabase()
-  
-  const comment = db.createComment({
-    postId: request.params.postId,
+app.post('/posts', { body: CreatePostInput }).use(authenticate).use((request) => {
+  const user = AuthContext.get()
+  const newPost = {
+    id: Date.now(),
     ...request.body,
-    createdAt: new Date()
-  })
-  
-  return Response.status(201).json(comment)
-})
-
-// 组合路由
-app.route('/api/posts').use(postsRouter)
-app.route('/api').use(commentsRouter)
-
-// 错误处理
-app.use(async (request, next) => {
-  try {
-    return await next(request)
-  } catch (error) {
-    if (error instanceof HttpError) {
-      return Response.status(error.status).json({
-        error: error.message
-      })
-    }
-    
-    console.error(error)
-    return Response.status(500).json({
-      error: 'Internal server error'
-    })
+    authorId: user!.id
   }
+  
+  return Response.status(201).json({
+    message: '文章创建成功',
+    post: newPost
+  })
 })
 
-// 启动服务器
+// 7. 启动服务器
 app.listen(3000, () => {
-  console.log('Blog API running on http://localhost:3000')
+  console.log('博客 API 服务器运行在 http://localhost:3000')
 })
 ```
 
-## 性能优化技巧
-
-### 1. Schema 复用
-
-```typescript
-// ✅ 好：复用 Schema 定义
-const UpdateUserSchema = partial(User)
-app.post('/users', { body: User })
-app.patch('/users/<id:int>', { body: UpdateUserSchema })
-
-// ❌ 避免：重复定义相同结构
-app.post('/users', { body: { name: String, email: String } })
-app.put('/users/<id:int>', { body: { name: String, email: String } })
-```
-
-### 2. 中间件顺序
-
-```typescript
-// ✅ 好：快速失败的中间件放前面
-app.use(rateLimit())     // 快速检查
-app.use(authenticate)     // 可能查询数据库
-app.use(loadUserData)     // 重操作放后面
-
-// ❌ 避免：重操作放前面
-app.use(loadUserData)     // 每个请求都执行
-app.use(rateLimit())      // 可能直接拒绝
-```
-
-### 3. Context 使用
-
-```typescript
-// ✅ 好：只在需要时读取 Context
-app.get('/public').use(() => {
-  // 不需要用户信息，不读取 UserContext
-  return Response.json({ message: 'Public data' })
-})
-
-// ❌ 避免：不必要的 Context 读取
-app.get('/public').use(() => {
-  const user = UserContext.get()  // 不需要但读取了
-  return Response.json({ message: 'Public data' })
-})
-```
-
-## 小结
-
-通过本章，你已经掌握了：
-
-✅ **路由系统** - 类型安全的参数、查询字符串、路由组织  
-✅ **Schema 系统** - 定义、验证、自定义验证器  
-✅ **中间件** - 认证、日志、CORS、限流等  
-✅ **响应构建** - JSON、文件、重定向、流式响应  
-✅ **Context** - 状态管理、自定义 Hooks  
-✅ **错误处理** - HttpError、全局错误处理  
-
-你现在已经具备了使用 Farrow 进行日常开发的所有技能！
+这个示例展示了：
+- ✅ **Schema 定义和验证** - User、Post、CreatePostInput
+- ✅ **Context 状态管理** - AuthContext 在中间件间共享用户信息
+- ✅ **中间件组合** - 认证中间件、日志中间件
+- ✅ **路由参数和查询参数** - `<id:int>`、`?<page?:int>&<limit?:int>`
+- ✅ **请求体验证** - 自动验证 CreatePostInput
+- ✅ **响应构建** - JSON 响应、状态码设置
 
 ## 下一步
 
-<div class="next-steps-grid">
+现在你已经学会了 Farrow 的基础知识！你可以：
 
-🔧 **[深入组件](./04-components-in-depth.md)**  
-深入理解 Schema、Pipeline、Context 的高级特性
+- **构建更复杂的 API** - 尝试添加更多路由和数据验证
+- **学习高级特性** - 查看 [高级指南](./advanced) 了解更多功能
+- **探索生态系统** - 发现可用的插件和工具
 
-⚡ **[进阶技巧](./05-advanced.md)**  
-学习高级模式和最佳实践
+::: tip 💡 小贴士
+记住，Farrow 是渐进式的。你可以从简单开始，然后根据需要逐步添加功能。不需要一开始就学会所有东西！
+:::
 
-🚀 **[实战项目](./examples/)**  
-通过完整项目巩固所学
+## 常见问题
 
-</div>
+<details>
+<summary><strong>为什么选择 Class 而不是 Interface？</strong></summary>
 
----
+Farrow Schema 使用类是因为它们在运行时存在，可以用于验证。而 TypeScript 接口在编译后会消失。
 
-<div class="doc-footer">
-  <div class="doc-nav">
-    <a href="./02-core-concepts.md">← 核心概念</a>
-    <a href="./04-components-in-depth.md">深入组件 →</a>
-  </div>
-</div>
+</details>
+
+<details>
+<summary><strong>如何处理跨域请求？</strong></summary>
+
+你可以使用中间件来处理 CORS：
+
+```typescript
+app.use((request, next) => {
+  const response = next(request)
+  return response.header('Access-Control-Allow-Origin', '*')
+})
+```
+
+</details>
+
+<details>
+<summary><strong>为什么我的响应数据在中间件中丢失了？</strong></summary>
+
+这通常是由于 Response 合并顺序错误导致的：
+
+```typescript
+// ❌ 错误：数据被覆盖
+app.use((request, next) => {
+  const response = next(request)
+  return Response.header('X-Custom', 'value').merge(response)
+})
+
+// ✅ 正确：使用链式调用
+app.use((request, next) => {
+  const response = next(request)
+  return response.header('X-Custom', 'value')
+})
+```
+
+记住：`merge()` 中最后一个响应会覆盖前面的主体内容。
+
+</details>
+
+<details>
+<summary><strong>路径参数验证失败时会发生什么？</strong></summary>
+
+当访问的 URL 不符合路径参数的类型要求时，Farrow 会自动返回 400 Bad Request 错误：
+
+```typescript
+// 定义路由
+app.get('/users/<id:int>').use((request) => {
+  return Response.json({ userId: request.params.id })
+})
+
+// 访问 /users/123 -> 正常返回 { userId: 123 }
+// 访问 /users/abc -> 自动返回 400 错误
+```
+
+这保证了到达处理器的参数一定是有效的类型。
+
+</details>
+
+<details>
+<summary><strong>支持 async/await 吗？</strong></summary>
+
+是的！中间件和路由处理器都支持异步操作：
+
+```typescript
+app.get('/async').use(async (request) => {
+  const data = await fetchSomeData()
+  return Response.json(data)
+})
+```
+
+</details>
