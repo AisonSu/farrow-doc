@@ -6,6 +6,16 @@ As your application grows, organizing routes becomes crucial. Farrow's Router sy
 
 ## Router Basics
 
+### Router Design Philosophy
+
+The Farrow Router system is designed based on these core principles:
+
+- **🧩 Modularity First** - Each Router is an independent, reusable routing module
+- **🔗 Composition Over Inheritance** - Build complex routing structures by composing simple routers  
+- **🎯 Single Responsibility** - Each Router handles routing for a specific functional domain
+- **♻️ Reusability** - The same Router can be mounted to different paths
+- **🔧 Easy Maintenance** - Routers can be independently developed, tested, and maintained
+
 ### Creating and Using Router
 
 The Router is Farrow's tool for organizing routes into logical modules:
@@ -24,6 +34,34 @@ const userRouter = Router()
 const app = Http()
 app.route('/users').use(userRouter)
 ```
+
+### Router Core Capabilities
+
+**Router instances have the same complete API as the main application:**
+
+```typescript
+const router = Router()
+
+// ✅ All HTTP methods
+router.get('/items').use(getItems)
+router.post('/items').use(createItems)
+router.put('/items/<id:int>').use(updateItem)
+
+// ✅ Middleware support
+router.use(loggingMiddleware)
+router.use(authMiddleware)
+
+// ✅ Nested routing
+router.route('/admin').use(adminRouter)
+
+// ✅ Static file serving
+router.serve('/static', './public')
+
+// ✅ Advanced route matching
+router.match({ url: '/api/<id:int>', method: 'GET' })
+```
+
+This design ensures Router consistency and predictability - anything you can do on the main application, you can also do on a Router.
 
 ### HTTP Method Support
 
@@ -53,7 +91,42 @@ const apiRouter = Router()
   .post('/data').use(createData)
 ```
 
-## Router Composition
+## Router Composition Patterns
+
+### Router() and route() Working Together
+
+`Router()` and `route()` methods are designed to work collaboratively:
+
+- **`Router()`** - Creates independent, reusable router instances
+- **`route()`** - Assigns path prefixes to routers and mounts them to the application
+
+```typescript
+// Standard three-step pattern
+// 1. Create independent routers
+const userRouter = Router()
+const adminRouter = Router()
+
+// 2. Configure routers
+userRouter.get('/profile').use(getUserProfile)
+userRouter.get('/settings').use(getUserSettings)
+
+adminRouter.get('/dashboard').use(getAdminDashboard)
+adminRouter.get('/users').use(getAllUsers)
+
+// 3. Use route() to mount to specific paths
+app.route('/users').use(userRouter)    // /users/profile, /users/settings
+app.route('/admin').use(adminRouter)   // /admin/dashboard, /admin/users
+```
+
+**Why This Design?**
+
+| Feature | Benefit |
+|---------|---------|
+| **Modularity** | Routers can be defined and exported in separate files |
+| **Reusability** | Same Router can be mounted to different paths |
+| **Path Management** | route() uniformly manages path prefixes |
+| **Test Friendly** | Routers can be tested independently |
+| **Team Collaboration** | Different developers can independently develop different routers |
 
 ### Basic Router Composition
 
@@ -405,6 +478,77 @@ const gateway = Http()
   .route('/api/v1').use(gatewayRouter)
 ```
 
+### File-Separated Modular Pattern
+
+Separate different functional routers into independent files:
+
+```typescript
+// routes/auth.ts
+export const authRouter = Router()
+  .post('/login').use(handleLogin)
+  .post('/logout').use(handleLogout)
+  .post('/register').use(handleRegister)
+
+// routes/users.ts  
+export const usersRouter = Router()
+  .get('/').use(listUsers)
+  .get('/<id:int>').use(getUserById)
+  .post('/').use(createUser)
+
+// routes/posts.ts
+export const postsRouter = Router()
+  .get('/').use(listPosts)
+  .get('/<id:int>').use(getPostById)
+  .post('/').use(authMiddleware).use(createPost)
+
+// main.ts - Main application assembly
+import { authRouter } from './routes/auth'
+import { usersRouter } from './routes/users'
+import { postsRouter } from './routes/posts'
+
+const app = Http()
+  .route('/auth').use(authRouter)
+  .route('/users').use(usersRouter)
+  .route('/posts').use(postsRouter)
+```
+
+### Complex Nested Routing Example
+
+Build enterprise-level application routing architecture:
+
+```typescript
+// API v1 router
+const apiV1Router = Router()
+
+// User management module
+const usersRouter = Router()
+  .get('/').use(getUsers)
+  .post('/').use(createUser)
+  .get('/<id:int>').use(getUserById)
+  .put('/<id:int>').use(updateUser)
+
+// Product management module
+const productsRouter = Router()
+  .get('/').use(getProducts)
+  .post('/').use(createProduct)
+  .get('/<id:int>/reviews').use(getProductReviews)
+
+// Order management module
+const ordersRouter = Router()
+  .get('/').use(getOrders)
+  .post('/').use(createOrder)
+  .get('/<id:int>').use(getOrderById)
+
+// Build complete API structure
+apiV1Router
+  .route('/users').use(usersRouter)       // /api/v1/users/*
+  .route('/products').use(productsRouter) // /api/v1/products/*  
+  .route('/orders').use(ordersRouter)     // /api/v1/orders/*
+
+// Mount to main application
+app.route('/api/v1').use(apiV1Router)
+```
+
 ## Best Practices
 
 ### Router Organization
@@ -419,6 +563,31 @@ const authenticationSystem = Router()
 const router1 = Router()
 const apiRouter = Router()
 const mainRouter = Router()
+```
+
+### Router Design Principles
+
+```typescript
+// ✅ Follow single responsibility principle
+const userRouter = Router()
+  // Only handle user-related functionality
+  .get('/profile').use(getUserProfile)
+  .put('/profile').use(updateUserProfile)
+  .get('/settings').use(getUserSettings)
+
+// ✅ Maintain router reusability
+const authRouter = Router()
+  .post('/login').use(handleLogin)
+  .post('/logout').use(handleLogout)
+  
+// Can be reused in multiple places
+app.route('/api/v1/auth').use(authRouter)
+app.route('/mobile/auth').use(authRouter)
+
+// ✅ Use descriptive router names
+const blogPostManagement = Router()      // Clearly expresses intent
+const userAccountOperations = Router()   // Defines functional scope
+const paymentProcessingSystem = Router() // Accurately describes responsibility
 ```
 
 ### Middleware Layering
@@ -460,9 +629,12 @@ const badRouter = Router()
 The Farrow Router system provides powerful tools for building maintainable routing architectures:
 
 - 🏗️ **Modular Design** - Organize routes into logical, reusable modules
-- 🔧 **Flexible Composition** - Compose complex routing structures from simple routers
+- 🔧 **Flexible Composition** - Build complex routing structures through Router() and route() collaboration
 - 🛡️ **Middleware Integration** - Apply middleware at router or route level
 - 📈 **Scalable Architecture** - Support for microservices and versioned APIs
 - 🎯 **Type Safety** - Complete TypeScript support throughout
+- ♻️ **High Reusability** - Same Router can be mounted to different paths
+- 🧩 **Single Responsibility** - Each Router focuses on a specific functional domain
+- 🔧 **Easy Maintenance** - Routers can be independently developed, tested, and maintained
 
-By properly utilizing Router features, you can build both powerful and maintainable routing systems that scale with your application's growth.
+By properly utilizing Router design philosophy and best practices, you can build both powerful and maintainable routing systems that scale with your application's growth.

@@ -43,7 +43,7 @@ export default defineConfig({
               text: 'HTTP 路由系统',
               items: [
                 { text: '路由参数进阶', link: '/guide/advanced-routing' },
-                { text: '高级路由技术', link: '/guide/flexible-routing' },
+                { text: 'Router 系统与模块化路由', link: '/guide/flexible-routing' },
                 { text: 'Response 构建与处理', link: '/guide/advanced-response' }
               ]
             },
@@ -158,7 +158,7 @@ export default defineConfig({
               text: 'HTTP Routing System',
               items: [
                 { text: 'Advanced Routing Parameters', link: '/en/guide/advanced-routing' },
-                { text: 'Advanced Routing Techniques', link: '/en/guide/flexible-routing' },
+                { text: 'Router System & Modular Routing', link: '/en/guide/flexible-routing' },
                 { text: 'Response Building & Processing', link: '/en/guide/advanced-response' }
               ]
             },

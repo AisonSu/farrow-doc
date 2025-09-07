@@ -104,6 +104,7 @@ You don't need to learn all concepts at the start. Begin with a simple HTTP serv
 
 - **[farrow-auth-session](https://github.com/AisonSu/farrow-auth-session)** - Session authentication solution
 - **[farrow-auth-jwt](https://github.com/AisonSu/farrow-auth-jwt)** - JWT authentication solution
+- **[farrow-helmet](https://github.com/AisonSu/farrow-helmet)** - Security headers middleware for enhanced application security
 
 </div>
 

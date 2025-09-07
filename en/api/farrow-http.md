@@ -931,7 +931,7 @@ Routers provide modular route management with support for composition and nestin
 
 #### `Router(): RouterPipeline`
 
-Creates standalone router instances.
+Creates standalone router instances for modular route management.
 
 ```typescript
 import { Router } from 'farrow-http'
@@ -947,6 +947,150 @@ userRouter.post('/update').use(() => Response.json({ success: true }))
 app.use(userRouter)
 app.route('/api').use(apiRouter)
 ```
+
+#### Router Core Features
+
+**Router instances have the same API as the main application:**
+
+```typescript
+const router = Router()
+
+// HTTP method routes
+router.get('/users')
+router.post('/users')
+router.put('/users/<id:int>')
+router.delete('/users/<id:int>')
+
+// Middleware support
+router.use(authMiddleware)
+router.use(validationMiddleware)
+
+// Nested sub-routes
+router.route('/admin').use(adminRouter)
+
+// Static file service
+router.serve('/static', './public')
+
+// Route matching
+router.match({ url: '/api/<id:int>', method: 'GET' })
+```
+
+#### Router Usage Patterns
+
+**Basic Pattern: Create + Configure + Mount**
+
+```typescript
+// 1. Create and configure router
+const userRouter = Router()
+userRouter.get('/').use(getUsersList)
+userRouter.get('/<id:int>').use(getUserById)
+
+// 2. Mount to application
+app.route('/users').use(userRouter)  // Paths: /users/*, /users/123
+```
+
+**Nested Pattern: Multi-layer Route Composition**
+
+```typescript
+const apiRouter = Router()
+const v1Router = Router()
+const userRouter = Router()
+
+// Configure each layer router
+userRouter.get('/profile').use(getProfile)
+v1Router.route('/users').use(userRouter)
+apiRouter.route('/v1').use(v1Router)
+
+// Final mount: /api/v1/users/profile
+app.route('/api').use(apiRouter)
+```
+
+**Modular Pattern: File Separation**
+
+```typescript
+// modules/auth.ts
+export const authRouter = Router()
+authRouter.post('/login').use(loginHandler)
+
+// modules/users.ts  
+export const usersRouter = Router()
+usersRouter.get('/').use(getUsersHandler)
+
+// main.ts
+import { authRouter } from './modules/auth'
+import { usersRouter } from './modules/users'
+
+app.route('/auth').use(authRouter)
+app.route('/users').use(usersRouter)
+```
+
+#### Router() and route() Working Together
+
+`Router()` and `route()` methods are designed to work together:
+
+- **`Router()`** - Creates independent, reusable router instances
+- **`route()`** - Assigns path prefixes to routers and mounts them to the application
+
+**Standard Cooperation Pattern:**
+
+```typescript
+// 1. Create independent routers
+const userRouter = Router()
+const adminRouter = Router()
+
+// 2. Configure routers
+userRouter.get('/profile').use(getUserProfile)
+userRouter.get('/settings').use(getUserSettings)
+
+adminRouter.get('/dashboard').use(getAdminDashboard)
+adminRouter.get('/users').use(getAllUsers)
+
+// 3. Use route() to mount routers to specific paths
+app.route('/users').use(userRouter)    // /users/profile, /users/settings
+app.route('/admin').use(adminRouter)   // /admin/dashboard, /admin/users
+```
+
+**Why This Design?**
+
+| Feature | Benefit |
+|---------|---------|
+| **Modularity** | Routers can be defined and exported in separate files |
+| **Reusability** | Same Router can be mounted to different paths |
+| **Path Management** | route() uniformly manages path prefixes |
+| **Test Friendly** | Routers can be tested independently |
+| **Team Collaboration** | Different developers can independently develop different routers |
+
+**Complex Nesting Example:**
+
+```typescript
+// API v1 router
+const apiV1Router = Router()
+
+// User management router  
+const usersRouter = Router()
+usersRouter.get('/').use(getUsers)
+usersRouter.post('/').use(createUser)
+usersRouter.get('/<id:int>').use(getUserById)
+
+// Product management router
+const productsRouter = Router()
+productsRouter.get('/').use(getProducts)
+productsRouter.post('/').use(createProduct)
+
+// Compose route structure
+apiV1Router.route('/users').use(usersRouter)       // /api/v1/users/*
+apiV1Router.route('/products').use(productsRouter) // /api/v1/products/*
+
+// Mount to main application
+app.route('/api/v1').use(apiV1Router)
+```
+
+**Usage Recommendations:**
+
+- ✅ **Create Modular Routers** - Use `Router()` to create function-related route groups
+- ✅ **Path Prefix Management** - Use `route()` to assign meaningful paths to routers
+- ✅ **Single Responsibility** - Each Router handles routing for a single functional domain
+- ✅ **Easy Maintenance** - Routers can be independently developed, tested, and maintained
 
 ### Nested Routes
 

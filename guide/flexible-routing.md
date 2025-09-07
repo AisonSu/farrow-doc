@@ -6,6 +6,16 @@
 
 ## Router 基础
 
+### Router 设计理念
+
+Farrow Router 系统基于以下核心理念设计：
+
+- **🧩 模块化优先** - 每个 Router 都是独立、可复用的路由模块
+- **🔗 组合胜过继承** - 通过组合简单路由器构建复杂路由结构  
+- **🎯 单一职责** - 每个 Router 负责特定功能域的路由管理
+- **♻️ 复用性** - 同一个 Router 可以挂载到不同路径
+- **🔧 易于维护** - Router 可以独立开发、测试和维护
+
 ### 创建和使用 Router
 
 Router 是 Farrow 用于将路由组织成逻辑模块的工具：
@@ -24,6 +34,34 @@ const userRouter = Router()
 const app = Http()
 app.route('/users').use(userRouter)
 ```
+
+### Router 核心能力
+
+**Router 实例具有与主应用相同的完整 API：**
+
+```typescript
+const router = Router()
+
+// ✅ 所有 HTTP 方法
+router.get('/items').use(getItems)
+router.post('/items').use(createItems)
+router.put('/items/<id:int>').use(updateItem)
+
+// ✅ 中间件支持
+router.use(loggingMiddleware)
+router.use(authMiddleware)
+
+// ✅ 嵌套路由
+router.route('/admin').use(adminRouter)
+
+// ✅ 静态文件服务
+router.serve('/static', './public')
+
+// ✅ 高级路由匹配
+router.match({ url: '/api/<id:int>', method: 'GET' })
+```
+
+这种设计确保了 Router 的一致性和可预测性 - 你在主应用上能做的事情，在 Router 上也能做。
 
 ### HTTP 方法支持
 
@@ -53,7 +91,42 @@ const apiRouter = Router()
   .post('/data').use(createData)
 ```
 
-## Router 组合
+## Router 组合模式
+
+### Router() 与 route() 的配合使用
+
+`Router()` 和 `route()` 方法是设计来协同工作的：
+
+- **`Router()`** - 创建独立、可复用的路由器实例
+- **`route()`** - 为路由器分配路径前缀并挂载到应用
+
+```typescript
+// 标准三步模式
+// 1. 创建独立路由器
+const userRouter = Router()
+const adminRouter = Router()
+
+// 2. 配置路由器
+userRouter.get('/profile').use(getUserProfile)
+userRouter.get('/settings').use(getUserSettings)
+
+adminRouter.get('/dashboard').use(getAdminDashboard)
+adminRouter.get('/users').use(getAllUsers)
+
+// 3. 使用 route() 挂载到特定路径
+app.route('/users').use(userRouter)    // /users/profile, /users/settings
+app.route('/admin').use(adminRouter)   // /admin/dashboard, /admin/users
+```
+
+**为什么这样设计？**
+
+| 特性 | 好处 |
+|------|------|
+| **模块化** | Router 可以在单独文件中定义和导出 |
+| **复用性** | 同一个 Router 可以挂载到不同路径 |
+| **路径管理** | route() 统一管理路径前缀 |
+| **测试友好** | Router 可以独立测试 |
+| **团队协作** | 不同开发者可以独立开发不同的路由器 |
 
 ### 基础 Router 组合
 
@@ -405,6 +478,77 @@ const gateway = Http()
   .route('/api/v1').use(gatewayRouter)
 ```
 
+### 文件分离的模块化模式
+
+将不同功能的路由器分离到独立文件中：
+
+```typescript
+// routes/auth.ts
+export const authRouter = Router()
+  .post('/login').use(handleLogin)
+  .post('/logout').use(handleLogout)
+  .post('/register').use(handleRegister)
+
+// routes/users.ts  
+export const usersRouter = Router()
+  .get('/').use(listUsers)
+  .get('/<id:int>').use(getUserById)
+  .post('/').use(createUser)
+
+// routes/posts.ts
+export const postsRouter = Router()
+  .get('/').use(listPosts)
+  .get('/<id:int>').use(getPostById)
+  .post('/').use(authMiddleware).use(createPost)
+
+// main.ts - 主应用组装
+import { authRouter } from './routes/auth'
+import { usersRouter } from './routes/users'
+import { postsRouter } from './routes/posts'
+
+const app = Http()
+  .route('/auth').use(authRouter)
+  .route('/users').use(usersRouter)
+  .route('/posts').use(postsRouter)
+```
+
+### 复杂嵌套路由示例
+
+构建企业级应用的路由架构：
+
+```typescript
+// API v1 路由器
+const apiV1Router = Router()
+
+// 用户管理模块
+const usersRouter = Router()
+  .get('/').use(getUsers)
+  .post('/').use(createUser)
+  .get('/<id:int>').use(getUserById)
+  .put('/<id:int>').use(updateUser)
+
+// 产品管理模块
+const productsRouter = Router()
+  .get('/').use(getProducts)
+  .post('/').use(createProduct)
+  .get('/<id:int>/reviews').use(getProductReviews)
+
+// 订单管理模块
+const ordersRouter = Router()
+  .get('/').use(getOrders)
+  .post('/').use(createOrder)
+  .get('/<id:int>').use(getOrderById)
+
+// 构建完整的 API 结构
+apiV1Router
+  .route('/users').use(usersRouter)       // /api/v1/users/*
+  .route('/products').use(productsRouter) // /api/v1/products/*  
+  .route('/orders').use(ordersRouter)     // /api/v1/orders/*
+
+// 挂载到主应用
+app.route('/api/v1').use(apiV1Router)
+```
+
 ## 最佳实践
 
 ### Router 组织
@@ -419,6 +563,31 @@ const authenticationSystem = Router()
 const router1 = Router()
 const apiRouter = Router()
 const mainRouter = Router()
+```
+
+### Router 设计原则
+
+```typescript
+// ✅ 遵循单一职责原则
+const userRouter = Router()
+  // 只处理用户相关功能
+  .get('/profile').use(getUserProfile)
+  .put('/profile').use(updateUserProfile)
+  .get('/settings').use(getUserSettings)
+
+// ✅ 保持路由器的可复用性
+const authRouter = Router()
+  .post('/login').use(handleLogin)
+  .post('/logout').use(handleLogout)
+  
+// 可以在多个地方复用
+app.route('/api/v1/auth').use(authRouter)
+app.route('/mobile/auth').use(authRouter)
+
+// ✅ 使用描述性的路由器名称
+const blogPostManagement = Router()      // 清晰表达意图
+const userAccountOperations = Router()   // 明确功能范围
+const paymentProcessingSystem = Router() // 准确描述职责
 ```
 
 ### 中间件分层
@@ -460,9 +629,12 @@ const badRouter = Router()
 Farrow Router 系统提供了构建可维护路由架构的强大工具：
 
 - 🏗️ **模块化设计** - 将路由组织为逻辑的、可复用的模块
-- 🔧 **灵活组合** - 从简单的路由器组合复杂的路由结构
+- 🔧 **灵活组合** - 通过 Router() 和 route() 的配合构建复杂路由结构
 - 🛡️ **中间件集成** - 在路由器或路由级别应用中间件
 - 📈 **可扩展架构** - 支持微服务和版本化 API
 - 🎯 **类型安全** - 完整的 TypeScript 支持
+- ♻️ **高度复用** - 同一个 Router 可以挂载到不同路径
+- 🧩 **单一职责** - 每个 Router 专注于特定功能域
+- 🔧 **易于维护** - Router 可以独立开发、测试和维护
 
-通过恰当地利用 Router 功能，你可以构建既强大又可维护的路由系统，随着应用程序的增长而扩展。
+通过恰当地利用 Router 的设计理念和最佳实践，你可以构建既强大又可维护的路由系统，随着应用程序的增长而扩展。

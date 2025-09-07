@@ -104,6 +104,7 @@ app.listen(3000)
 
 - **[farrow-auth-session](https://github.com/AisonSu/farrow-auth-session)** - Session 认证解决方案
 - **[farrow-auth-jwt](https://github.com/AisonSu/farrow-auth-jwt)** - JWT 认证解决方案
+- **[farrow-helmet](https://github.com/AisonSu/farrow-helmet)** - 安全头中间件，增强应用安全性
 
 </div>
 

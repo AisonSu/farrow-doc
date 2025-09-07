@@ -1082,7 +1082,7 @@ type MaybeAsyncResponse = Response | Promise<Response>
 
 #### `Router(): RouterPipeline`
 
-创建独立的路由器实例。
+创建独立的路由器实例，用于模块化路由管理。
 
 ```typescript
 import { Router } from 'farrow-http'
@@ -1098,6 +1098,150 @@ userRouter.post('/update').use(() => Response.json({ success: true }))
 app.use(userRouter)
 app.route('/api').use(apiRouter)
 ```
+
+#### Router 的核心特性
+
+**Router 实例具有与主应用相同的 API：**
+
+```typescript
+const router = Router()
+
+// HTTP 方法路由
+router.get('/users')
+router.post('/users')
+router.put('/users/<id:int>')
+router.delete('/users/<id:int>')
+
+// 中间件支持
+router.use(authMiddleware)
+router.use(validationMiddleware)
+
+// 嵌套子路由
+router.route('/admin').use(adminRouter)
+
+// 静态文件服务
+router.serve('/static', './public')
+
+// 路由匹配
+router.match({ url: '/api/<id:int>', method: 'GET' })
+```
+
+#### Router 使用模式
+
+**基础模式：创建 + 配置 + 挂载**
+
+```typescript
+// 1. 创建并配置路由器
+const userRouter = Router()
+userRouter.get('/').use(getUsersList)
+userRouter.get('/<id:int>').use(getUserById)
+
+// 2. 挂载到应用
+app.route('/users').use(userRouter)  // 路径: /users/*, /users/123
+```
+
+**嵌套模式：多层路由组合**
+
+```typescript
+const apiRouter = Router()
+const v1Router = Router()
+const userRouter = Router()
+
+// 配置各层路由器
+userRouter.get('/profile').use(getProfile)
+v1Router.route('/users').use(userRouter)
+apiRouter.route('/v1').use(v1Router)
+
+// 最终挂载: /api/v1/users/profile
+app.route('/api').use(apiRouter)
+```
+
+**模块化模式：文件分离**
+
+```typescript
+// modules/auth.ts
+export const authRouter = Router()
+authRouter.post('/login').use(loginHandler)
+
+// modules/users.ts  
+export const usersRouter = Router()
+usersRouter.get('/').use(getUsersHandler)
+
+// main.ts
+import { authRouter } from './modules/auth'
+import { usersRouter } from './modules/users'
+
+app.route('/auth').use(authRouter)
+app.route('/users').use(usersRouter)
+```
+
+#### Router() 与 route() 配合使用
+
+`Router()` 和 `route()` 方法是设计来配合工作的：
+
+- **`Router()`** - 创建独立的、可复用的路由器实例
+- **`route()`** - 为路由器分配路径前缀并挂载到应用
+
+**标准配合模式：**
+
+```typescript
+// 1. 创建独立路由器
+const userRouter = Router()
+const adminRouter = Router()
+
+// 2. 配置路由器
+userRouter.get('/profile').use(getUserProfile)
+userRouter.get('/settings').use(getUserSettings)
+
+adminRouter.get('/dashboard').use(getAdminDashboard)
+adminRouter.get('/users').use(getAllUsers)
+
+// 3. 使用 route() 挂载路由器到特定路径
+app.route('/users').use(userRouter)    // /users/profile, /users/settings
+app.route('/admin').use(adminRouter)   // /admin/dashboard, /admin/users
+```
+
+**为什么这样设计？**
+
+| 特性 | 好处 |
+|------|------|
+| **模块化** | Router 可以在单独文件中定义和导出 |
+| **复用性** | 同一个 Router 可以挂载到不同路径 |
+| **路径管理** | route() 统一管理路径前缀 |
+| **测试友好** | Router 可以独立测试 |
+| **团队协作** | 不同开发者可以独立开发不同的路由器 |
+
+**复杂嵌套示例：**
+
+```typescript
+// API v1 路由器
+const apiV1Router = Router()
+
+// 用户管理路由器  
+const usersRouter = Router()
+usersRouter.get('/').use(getUsers)
+usersRouter.post('/').use(createUser)
+usersRouter.get('/<id:int>').use(getUserById)
+
+// 产品管理路由器
+const productsRouter = Router()
+productsRouter.get('/').use(getProducts)
+productsRouter.post('/').use(createProduct)
+
+// 组合路由结构
+apiV1Router.route('/users').use(usersRouter)       // /api/v1/users/*
+apiV1Router.route('/products').use(productsRouter) // /api/v1/products/*
+
+// 挂载到主应用
+app.route('/api/v1').use(apiV1Router)
+```
+
+**使用建议：**
+
+- ✅ **创建模块化路由器** - 使用 `Router()` 创建功能相关的路由组
+- ✅ **路径前缀管理** - 使用 `route()` 为路由器分配有意义的路径
+- ✅ **单一职责** - 每个 Router 负责单一功能域的路由
+- ✅ **便于维护** - Router 可以独立开发、测试和维护
 
 ### 嵌套路由
 
