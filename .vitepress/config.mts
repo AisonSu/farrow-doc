@@ -17,9 +17,6 @@ export default defineConfig({
           { 
             text: '生态系统',
             items: [
-              { text: 'farrow-http', link: '/ecosystem/farrow-http' },
-              { text: 'farrow-schema', link: '/ecosystem/farrow-schema' },
-              { text: 'farrow-pipeline', link: '/ecosystem/farrow-pipeline' },
               { text: 'farrow-express', link: '/ecosystem/farrow-express' },
               { text: 'farrow-cors', link: '/ecosystem/farrow-cors' },
               { text: 'farrow-koa', link: '/ecosystem/farrow-koa' }
@@ -135,9 +132,6 @@ export default defineConfig({
           { 
             text: 'Ecosystem',
             items: [
-              { text: 'farrow-http', link: '/en/ecosystem/farrow-http' },
-              { text: 'farrow-schema', link: '/en/ecosystem/farrow-schema' },
-              { text: 'farrow-pipeline', link: '/en/ecosystem/farrow-pipeline' },
               { text: 'farrow-express', link: '/en/ecosystem/farrow-express' },
               { text: 'farrow-cors', link: '/en/ecosystem/farrow-cors' },
               { text: 'farrow-koa', link: '/en/ecosystem/farrow-koa' }
