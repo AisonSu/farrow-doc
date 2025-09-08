@@ -18,6 +18,7 @@ export default defineConfig({
           { 
             text: '生态系统',
             items: [
+              { text: '中间件生态对比', link: '/ecosystem/middleware-comparison' },
               { text: 'farrow-express', link: '/ecosystem/farrow-express' },
               { text: 'farrow-cors', link: '/ecosystem/farrow-cors' },
               { text: 'farrow-koa', link: '/ecosystem/farrow-koa' }
@@ -145,6 +146,7 @@ export default defineConfig({
           { 
             text: 'Ecosystem',
             items: [
+              { text: 'Middleware Comparison', link: '/en/ecosystem/middleware-comparison' },
               { text: 'farrow-express', link: '/en/ecosystem/farrow-express' },
               { text: 'farrow-cors', link: '/en/ecosystem/farrow-cors' },
               { text: 'farrow-koa', link: '/en/ecosystem/farrow-koa' }
