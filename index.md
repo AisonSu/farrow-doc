@@ -91,8 +91,8 @@ app.listen(3000)
 ### 核心包
 
 - **farrow-http** - HTTP 服务器和路由
-- **farrow-schema** - Schema 定义和验证
-- **farrow-pipeline** - 中间件管道和 Context
+- **farrow-schema** - Schema 定义和验证 | [独立教程指南](/guide/farrow-schema-tutorial)
+- **farrow-pipeline** - 中间件管道和 Context | [独立教程指南](/guide/pipeline-tutorial)
 
 ### 官方集成
 

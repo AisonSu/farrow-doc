@@ -28,8 +28,20 @@ Farrow Pipeline 是一个类型安全的中间件管道库，提供函数式编�
 import { createPipeline, createContext } from 'farrow-pipeline'
 import * as asyncTracerImpl from 'farrow-pipeline/asyncTracerImpl.node'
 
-// Node.js 环境必需 - 启用异步追踪
+// Node.js 环境必需 - 启用异步追踪（应用启动时）
 asyncTracerImpl.enable()
+
+// 定义类型
+interface Request {
+  method: string
+  url: string
+  headers: Record<string, string>
+}
+
+interface Response {
+  status: number
+  body: any
+}
 
 // 创建 Pipeline
 const app = createPipeline<Request, Response>()
@@ -44,6 +56,7 @@ app.use((req) => {
 })
 
 // 运行
+const request: Request = { method: 'GET', url: '/', headers: {} }
 const response = app.run(request)
 ```
 
@@ -92,6 +105,11 @@ const app = createPipeline<Request, Response>()
 **Pipeline 嵌套**
 
 ```typescript
+interface User {
+  email: string
+  name: string
+}
+
 const validationPipeline = createPipeline<User, User>()
 validationPipeline.use((user) => {
   if (!user.email.includes('@')) {
@@ -100,9 +118,21 @@ validationPipeline.use((user) => {
   return user
 })
 
+// 方式1：直接嵌套（要求类型兼容）
 const mainPipeline = createPipeline<User, Response>()
-mainPipeline.use(validationPipeline) // 直接嵌套
+mainPipeline.use(validationPipeline) // Pipeline 可以直接作为中间件使用
 mainPipeline.use((user) => ({ status: 200, user }))
+
+// 方式2：使用 usePipeline（处理返回值和错误）
+mainPipeline.use((user, next) => {
+  const runValidation = usePipeline(validationPipeline)
+  try {
+    const validatedUser = runValidation(user)
+    return next(validatedUser)
+  } catch (error) {
+    return { status: 400, error: error.message }
+  }
+})
 ```
 
 ---
@@ -179,7 +209,13 @@ function usePipeline<Input, Output>(
 
 **为什么需要 usePipeline？**
 
-当你直接调用 `pipeline.run()` 时，会创建新的 Container，导致上下文丢失。`usePipeline` 确保子 Pipeline 继承当前的上下文状态。
+1. **Context 传递**：当你直接调用 `pipeline.run()` 时，会创建新的 Container，导致上下文丢失。`usePipeline` 确保子 Pipeline 继承当前的上下文状态。
+2. **错误处理**：`usePipeline` 返回一个可调用的函数，让你可以用 try-catch 处理子 Pipeline 的错误。
+3. **返回值处理**：可以对子 Pipeline 的返回值进行进一步处理。
+
+**使用场景对比：**
+- **直接嵌套**：`pipeline.use(subPipeline)` - 适合类型兼容的简单组合
+- **usePipeline**：`usePipeline(subPipeline)` - 适合需要错误处理和返回值处理的场景
 
 ```typescript
 const UserContext = createContext<User | null>(null)
@@ -323,11 +359,20 @@ const results = await Promise.all([
 
 **Container（容器）**是 Farrow Pipeline 的内部机制，用于管理 Context 的存储和隔离。理解 Container 概念有助于更好地使用 Context 和 Pipeline。
 
+**Container 的实现原理：**
+
+Container 基于 Node.js 的 **AsyncLocalStorage** 实现上下文管理：
+- 在 Node.js 环境中，使用 AsyncLocalStorage 确保上下文正确传递
+- **在浏览器环境中，由于缺少 AsyncLocalStorage API，Context 系统无法正常工作**
+- 因此 **Farrow Pipeline 主要面向 Node.js 服务端环境**
+- 需要在应用启动时启用 AsyncTracer：`asyncTracerImpl.enable()`
+
 **Container 的作用：**
 
 1. **状态隔离**：每次 `pipeline.run()` 创建独立的 Container
 2. **自动传递**：使用 `usePipeline` 时自动继承父 Container  
 3. **异步安全**：基于 AsyncLocalStorage 确保异步操作中上下文正确传递
+4. **跨调用栈**：即使在 Promise、setTimeout 等异步操作中也能正确获取 Context
 
 **Container 生命周期：**
 
@@ -337,6 +382,7 @@ const UserContext = createContext<User | null>(null)
 // 创建 Pipeline 时可以预设 Context
 const pipeline = createPipeline<Request, Response>({
   contexts: {
+    // 键名任意，但建议使用有意义的名称
     user: UserContext.create({ id: '1', name: 'Default User' })
   }
 })
@@ -374,7 +420,7 @@ const LoggerContext = createContext<Logger>(consoleLogger)
 
 // 创建测试专用容器
 const testContainer = createContainer({
-  db: DatabaseContext.create(mockDatabase),
+  database: DatabaseContext.create(mockDatabase),
   logger: LoggerContext.create(silentLogger)
 })
 
@@ -700,30 +746,34 @@ await Promise.all([
 ])
 ```
 
-**Q: 浏览器环境如何使用？**
+**Q: 浏览器环境能使用吗？**
 
-A: 浏览器环境不支持异步上下文追踪，需要避免在异步操作中依赖 Context：
+A: **不推荐在浏览器中使用。** Farrow Pipeline 基于 Node.js 的 AsyncLocalStorage 实现 Context 系统，浏览器环境缺少此API，导致Context功能无法工作：
 
 ```typescript
-// 浏览器中使用
+// 浏览器环境的限制
 const pipeline = createPipeline<Request, Response>()
 
-// ✅ 同步使用 Context
+// ❌ Context 操作在浏览器中不可靠
 pipeline.use((req, next) => {
-  UserContext.set(req.user)
+  UserContext.set(req.user) // 可能无法正确存储
   return next(req)
 })
 
-// ❌ 异步中可能丢失 Context  
-pipeline.use(async (req, next) => {
-  await fetchData()
-  const user = UserContext.get() // 可能为空
-  return next(req)
+pipeline.use((req) => {
+  const user = UserContext.get() // 可能获取不到值
+  return { status: 200, user }
 })
 
-// ✅ 手动传递数据而不依赖 Context
-pipeline.use(async (req, next) => {
-  const data = await fetchData()
-  return next({ ...req, data })
+// ✅ 替代方案：直接通过数据流传递状态
+pipeline.use((req, next) => {
+  const userData = authenticate(req)
+  return next({ ...req, user: userData })
+})
+
+pipeline.use((req) => {
+  return { status: 200, user: req.user } // 直接使用传递的数据
 })
 ```
+
+**建议**：Farrow Pipeline 主要设计用于 Node.js 服务端环境。如需前端状态管理，建议使用专门的前端状态管理库。

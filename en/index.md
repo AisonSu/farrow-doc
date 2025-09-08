@@ -92,7 +92,7 @@ You don't need to learn all concepts at the start. Begin with a simple HTTP serv
 
 - **farrow-http** - HTTP server and routing
 - **farrow-schema** - Schema definition and validation
-- **farrow-pipeline** - Middleware pipeline and Context
+- **farrow-pipeline** - Middleware pipeline and Context | [Progressive Tutorial](/en/tutorial/)
 
 ### Official Integrations
 

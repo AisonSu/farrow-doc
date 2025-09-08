@@ -3,6 +3,7 @@ import { defineConfig } from 'vitepress'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   title: "Farrow",
+  base: "/",
   
   locales: {
     root: {
@@ -58,6 +59,13 @@ export default defineConfig({
               text: 'Pipeline 中间件系统',
               items: [
                 { text: 'Pipeline 完整指南', link: '/guide/pipeline-concepts' }
+              ]
+            },
+            {
+              text: '独立教程',
+              items: [
+                { text: 'Pipeline 渐进式学习指南', link: '/guide/pipeline-tutorial' },
+                { text: 'Schema 渐进式学习指南', link: '/guide/schema-tutorial' }
               ]
             }
           ],
@@ -128,6 +136,11 @@ export default defineConfig({
         nav: [
           { text: 'Home', link: '/en/' },
           { text: 'Guide', link: '/en/guide/essentials' },
+          { text: 'Tutorial', link: '/en/tutorial/' },
+          { 
+            text: 'Pipeline Tutorial',
+            link: '/en/pipeline-tutorial/'
+          },
           { text: 'API', link: '/en/api/' },
           { 
             text: 'Ecosystem',
@@ -173,6 +186,43 @@ export default defineConfig({
               text: 'Pipeline Middleware System',
               items: [
                 { text: 'Pipeline Complete Guide', link: '/en/guide/pipeline-concepts' }
+              ]
+            },
+            {
+              text: 'Independent Tutorials',
+              items: [
+                { text: 'Pipeline Progressive Learning Guide', link: '/en/guide/pipeline-tutorial' },
+                { text: 'Schema Progressive Learning Guide', link: '/en/guide/schema-tutorial' }
+              ]
+            }
+          ],
+          '/en/tutorial/': [
+            {
+              text: 'Farrow Pipeline Progressive Tutorial',
+              items: [
+                { text: '📚 Tutorial Overview', link: '/en/tutorial/' },
+                { text: '🌟 Chapter 1: Why Pipeline?', link: '/en/tutorial/01-why-pipeline' },
+                { text: '🏗️ Chapter 2: Build Your First App', link: '/en/tutorial/02-build-first-app' },
+                { text: '🔗 Chapter 3: State Management', link: '/en/tutorial/03-context-state-management' },
+                { text: '🎨 Chapter 4: Advanced Composition', link: '/en/tutorial/04-advanced-composition' }
+              ]
+            }
+          ],
+          '/en/pipeline-tutorial/': [
+            {
+              text: 'Farrow Pipeline Progressive Tutorial',
+              items: [
+                { text: '📚 Tutorial Overview', link: '/en/pipeline-tutorial/' },
+                { text: '🚀 Chapter 1: Getting Started', link: '/en/pipeline-tutorial/01-getting-started' },
+                { text: '🧠 Chapter 2: Core Concepts', link: '/en/pipeline-tutorial/02-core-concepts' },
+                { text: '🎭 Chapter 3: Middleware Patterns', link: '/en/pipeline-tutorial/03-middleware-patterns' },
+                { text: '🗃️ Chapter 4: State Management', link: '/en/pipeline-tutorial/04-context-management' },
+                { text: '🔗 Chapter 5: Pipeline Composition', link: '/en/pipeline-tutorial/05-composition' },
+                { text: '⏰ Chapter 6: Async Patterns', link: '/en/pipeline-tutorial/06-async-patterns' },
+                { text: '🛡️ Chapter 7: Error Handling', link: '/en/pipeline-tutorial/07-error-handling' },
+                { text: '🧪 Chapter 8: Testing Strategies', link: '/en/pipeline-tutorial/08-testing' },
+                { text: '🏢 Chapter 9: Real-world Cases', link: '/en/pipeline-tutorial/09-real-world' },
+                { text: '💎 Chapter 10: Best Practices', link: '/en/pipeline-tutorial/10-best-practices' }
               ]
             }
           ],
